@@ -1,0 +1,25 @@
+# docker-compose.yml
+services:
+  db:
+    # pgvector ships an official image = Postgres + the extension preinstalled.
+    # Pinned to pg16 to match the architecture doc. Not :latest — reproducible builds.
+    image: pgvector/pgvector:pg16
+    container_name: reg_ai_db
+    environment:
+      POSTGRES_USER: reg
+      POSTGRES_PASSWORD: reg_dev_pw     # dev-only; real secrets come from .env, never committed
+      POSTGRES_DB: reg_ai
+    ports:
+      - "5432:5432"                     # host:container — lets drizzle-kit + psql reach it from your machine
+    volumes:
+      - reg_ai_pgdata:/var/lib/postgresql/data   # named volume = data survives `docker compose down`
+    healthcheck:
+      # so app/worker services (added later) can `depends_on` a DB that's actually ready,
+      # not just a container that started. pg_isready is Postgres's own readiness probe.
+      test: ["CMD-SHELL", "pg_isready -U reg -d reg_ai"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  reg_ai_pgdata:

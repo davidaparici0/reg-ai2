@@ -33,8 +33,11 @@ with a pasted key and a generic prompt — ungrounded, insecure, placeholder dat
 
 ## The stack (DECIDED — do not relitigate without a concrete reason)
 
-- **App:** TypeScript, Next.js 15 (App Router), full-stack — React frontend + Route
-  Handlers under `/api`. Validation with **Zod** (the schema IS the contract; infer TS
+- **App:** TypeScript, Next.js 16 (App Router), full-stack — React frontend + Route
+  Handlers under `/api`. (Was specced as 15; `create-next-app@latest` shipped 16.2.6 +
+  React 19.2.4 in Phase 0 — App Router/Route Handlers unchanged, design unaffected, so
+  we took current stable rather than fight a 16-targeted generator.) Validation with
+  **Zod** (the schema IS the contract; infer TS
   types from it). Shared types across client/server.
 - **DB:** PostgreSQL 16 + **pgvector** (one DB for relational data AND embeddings).
   **Drizzle ORM** + `drizzle-kit` migrations.
@@ -159,9 +162,20 @@ Two design decisions to remember mid-build:
 
 ## Current status (update this as you go)
 
-**Phase 0, in progress.** `docker-compose.yml` written (Postgres 16 + pgvector, named
-volume, healthcheck). **Next step:** verify pgvector is enable-able —
-`docker compose up -d db` then `psql … -c "CREATE EXTENSION IF NOT EXISTS vector; SELECT
-extversion FROM pg_extension WHERE extname='vector';"` should return a version. Then:
-Drizzle config + connection pool → first migration (extension + schema) → `/api/health`
-→ package.json scripts + `.env`.
+**Phase 0, in progress.** Done so far:
+- `docker-compose.yml` (Postgres 16 + pgvector, named volume, healthcheck).
+- **pgvector verified enable-able** — `CREATE EXTENSION vector` returns **v0.8.2** in the
+  `reg_ai` container DB. (0.8+ ⇒ iterative index scans available, rung 2 of the D2 recall
+  ladder.) This was a throwaway check; the real `CREATE EXTENSION` belongs in migration 0001.
+- **Next.js app scaffolded** (Next 16.2.6 + React 19.2.4, App Router, `src/`, Tailwind v4,
+  ESLint, `@/*` alias). `tsc --noEmit` clean, `next build` green, dev server serves `/` (200).
+- **Deps installed:** `drizzle-orm`, `pg`, `drizzle-kit` (dev), `@types/pg` (dev).
+
+**Next step:** Drizzle config (`drizzle.config.ts` pointing at `schema.ts`) + `pg` `Pool`
+connection module → first migration (`CREATE EXTENSION vector` BEFORE schema) →
+`GET /api/health` (DB reachable + vector present) → npm scripts + server-only `.env`
+(+ `.env.example`). Then commit the Phase 0 baseline (track `docker-compose.yml`, the
+eval-set move, and the scaffold).
+
+Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
+silence later by setting `turbopack.root` in `next.config.ts` if it nags.
