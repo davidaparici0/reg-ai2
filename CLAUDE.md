@@ -162,20 +162,26 @@ Two design decisions to remember mid-build:
 
 ## Current status (update this as you go)
 
-**Phase 0, in progress.** Done so far:
+**Phase 0 — COMPLETE.** It runs and is tested:
 - `docker-compose.yml` (Postgres 16 + pgvector, named volume, healthcheck).
-- **pgvector verified enable-able** — `CREATE EXTENSION vector` returns **v0.8.2** in the
-  `reg_ai` container DB. (0.8+ ⇒ iterative index scans available, rung 2 of the D2 recall
-  ladder.) This was a throwaway check; the real `CREATE EXTENSION` belongs in migration 0001.
-- **Next.js app scaffolded** (Next 16.2.6 + React 19.2.4, App Router, `src/`, Tailwind v4,
-  ESLint, `@/*` alias). `tsc --noEmit` clean, `next build` green, dev server serves `/` (200).
-- **Deps installed:** `drizzle-orm`, `pg`, `drizzle-kit` (dev), `@types/pg` (dev).
+- **Next.js app** (Next 16.2.6 + React 19.2.4, App Router, `src/`, Tailwind v4, ESLint,
+  `@/*` alias). `tsc --noEmit` clean, `next build` green, dev serves `/` (200).
+- **DB layer:** `src/lib/db.ts` = one `pg` `Pool` per process (globalThis-cached across
+  dev hot reloads) + Drizzle client; `import "server-only"` guards the DSN from any client
+  bundle. `drizzle.config.ts` (dotenv-loaded) points at root `schema.ts`.
+- **Migration 0001** (`drizzle/0000_petite_colossus.sql`) applied: 11 tables + enums + FKs
+  + indexes, with `CREATE EXTENSION IF NOT EXISTS vector;` hand-prepended as statement 1
+  (drizzle won't emit it; the `vector(1536)` column + HNSW index need it first). pgvector
+  **v0.8.2** confirmed live (0.8+ ⇒ iterative scans, rung 2 of the D2 recall ladder).
+- **`GET /api/health`** → `200 {"db":"ok","vector":"0.8.2"}` against the running DB; 503 if
+  DB unreachable or extension missing.
+- **Env:** server-only `.env` (gitignored) + committed `.env.example`. npm scripts:
+  `db:generate` / `db:migrate` / `db:studio`.
 
-**Next step:** Drizzle config (`drizzle.config.ts` pointing at `schema.ts`) + `pg` `Pool`
-connection module → first migration (`CREATE EXTENSION vector` BEFORE schema) →
-`GET /api/health` (DB reachable + vector present) → npm scripts + server-only `.env`
-(+ `.env.example`). Then commit the Phase 0 baseline (track `docker-compose.yml`, the
-eval-set move, and the scaffold).
+**Next step → Phase 1 (Auth & multi-tenancy, FR-001–004).** This is where D1 (RLS) lands:
+policies read `current_setting('app.restaurant_id')`, and the auth layer must `set_config`
+that GUC on the same pooled connection that runs each query (the reason we chose `pg`).
+Cookie sessions (HTTPOnly/SameSite=Strict/Secure), argon2/bcrypt hashing.
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
-silence later by setting `turbopack.root` in `next.config.ts` if it nags.
+silence later via `turbopack.root` in `next.config.ts` if it nags.
