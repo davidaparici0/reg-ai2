@@ -37,4 +37,17 @@ describe("POST /api/auth/register", () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("ignores a forged restaurant_id in the body (tenancy never from input)", async () => {
+    const forged = crypto.randomUUID();
+    const res = await POST(req({
+      restaurantName: "Real", email: `${crypto.randomUUID()}@t.test`, password: "x".repeat(12),
+      restaurantId: forged,
+    }));
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    track(json.restaurant.id);
+    expect(json.restaurant.id).not.toBe(forged); // a fresh restaurant, not the forged id
+    expect(json.restaurant.name).toBe("Real");
+  });
 });

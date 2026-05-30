@@ -19,15 +19,25 @@ export async function POST(req: Request) {
 
   const passwordHash = await hashPassword(parsed.data.password);
 
-  const { user, restaurant } = await db.transaction(async (tx) => {
-    const [restaurant] = await tx.insert(restaurants).values({ name: parsed.data.restaurantName }).returning();
-    const [user] = await tx.insert(users)
-      .values({ restaurantId: restaurant.id, email, passwordHash, role: "owner" }).returning();
-    return { user, restaurant };
-  });
+  try {
+    const { user, restaurant } = await db.transaction(async (tx) => {
+      const [restaurant] = await tx.insert(restaurants).values({ name: parsed.data.restaurantName }).returning();
+      const [user] = await tx.insert(users)
+        .values({ restaurantId: restaurant.id, email, passwordHash, role: "owner" }).returning();
+      return { user, restaurant };
+    });
 
-  const { token, expiresAt } = await createSession(user.id);
-  const res = NextResponse.json({ user: toPublicUser(user), restaurant }, { status: 201 });
-  res.cookies.set(buildSessionCookie(token, expiresAt));
-  return res;
+    const { token, expiresAt } = await createSession(user.id);
+    const res = NextResponse.json({ user: toPublicUser(user), restaurant }, { status: 201 });
+    res.cookies.set(buildSessionCookie(token, expiresAt));
+    return res;
+  } catch (err) {
+    // Race: two concurrent registrations with the same email can both pass the pre-check
+    // above; the unique constraint (Postgres 23505) protects integrity — surface 409, not 500.
+    if (err && typeof err === "object" && "code" in err && (err as { code?: unknown }).code === "23505") {
+      return errorResponse("CONFLICT", "Email already registered");
+    }
+    console.error("[/api/auth/register] failed:", err);
+    return errorResponse("INTERNAL", "Registration failed");
+  }
 }
