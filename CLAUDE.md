@@ -178,10 +178,28 @@ Two design decisions to remember mid-build:
 - **Env:** server-only `.env` (gitignored) + committed `.env.example`. npm scripts:
   `db:generate` / `db:migrate` / `db:studio`.
 
-**Next step → Phase 1 (Auth & multi-tenancy, FR-001–004).** This is where D1 (RLS) lands:
-policies read `current_setting('app.restaurant_id')`, and the auth layer must `set_config`
-that GUC on the same pooled connection that runs each query (the reason we chose `pg`).
-Cookie sessions (HTTPOnly/SameSite=Strict/Secure), argon2/bcrypt hashing.
+**Phase 1 — COMPLETE.** Auth & multi-tenancy (FR-001–004), tested + built (28 vitest tests,
+`tsc` clean, `next build` green). Spec/plan: `docs/superpowers/{specs,plans}/2026-05-29-phase-1-*`.
+- **Auth routes:** `register` (restaurant + first owner, auto-login), `login` (argon2id verify,
+  anti-enumeration), `logout` (204 + revoke), `GET /me`. Zod + error-envelope per `docs/api.md`.
+- **Sessions:** DB-backed `sessions` table; opaque 32-byte token in an HttpOnly/SameSite=Strict/
+  Secure `sid` cookie; only SHA-256 stored; 7-day fixed TTL. argon2id via `@node-rs/argon2`.
+- **Tenant isolation (D1 RLS):** `withTenant(rid, fn)` in `db.ts` sets a **transaction-local**
+  `app.restaurant_id` GUC; policies (`USING`+`WITH CHECK` on `current_setting('app.restaurant_id',
+  true)`) on the 6 data tables. **REVISION (found in build):** the app connects as a **non-superuser
+  `reg_app`** role (migration 0002) — the default `reg` is a SUPERUSER and bypasses RLS even with
+  FORCE. Two DSNs: `DATABASE_URL`=reg_app (app), `MIGRATION_DATABASE_URL`=reg (drizzle-kit). The
+  isolation test proves cross-tenant reads return empty + `WITH CHECK` blocks cross-tenant writes.
+
+**Next step → Phase 2 (Document Ingestion, FR-005–009).** PDF end-to-end first: upload → `documents`
+row (202) → polling worker (`SELECT … FOR UPDATE SKIP LOCKED`) parses → chunks deterministically →
+embeds (OpenAI `text-embedding-3-small`, 1536d) → writes `chunks` (with `restaurant_id`) → done/failed.
+The worker writes tenant data, so it must connect as `reg_app` and `withTenant(doc.restaurantId)` or
+RLS returns empty. The `owner|manager`-guarded upload route is where Phase 1's role guard first bites.
+
+Known gaps carried forward: login rate-limiting (FR-026, Phase 7); RLS on `messages` /
+`message_sources` / `module_progress` (their phases); `reg_app`'s dev password is committed in
+migration 0002 — prod provisions the role + secret via infra (Phase 8).
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
