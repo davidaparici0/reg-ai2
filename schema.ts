@@ -81,6 +81,21 @@ export const users = pgTable(
   (t) => [index("users_restaurant_idx").on(t.restaurantId)], // tenant-scoped lookups
 );
 
+// ---- sessions — FR-002 ------------------------------------------------------
+// Opaque-token server-side sessions. id = SHA-256(token) hex (NOT the raw token),
+// so a DB leak can't be replayed as live sessions. No restaurant_id, no RLS:
+// resolved BEFORE the tenant GUC is set (the login bootstrap).
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
 // ---- documents — FR-005 / FR-008 / FR-009 -----------------------------------
 // Unique (restaurant_id, content_hash) is the document-level dedup guarantee.
 export const documents = pgTable(

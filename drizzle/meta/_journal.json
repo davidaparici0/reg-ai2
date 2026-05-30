@@ -8,6 +8,13 @@
       "when": 1780094503207,
       "tag": "0000_petite_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780104422096,
+      "tag": "0001_cooing_viper",
+      "breakpoints": true
     }
   ]
 }
