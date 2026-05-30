@@ -7,6 +7,7 @@ import "server-only";
 
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 
 const connectionString = process.env.DATABASE_URL;
@@ -30,3 +31,17 @@ if (process.env.NODE_ENV !== "production") globalForDb._pgPool = pool;
 // In Phase 1, tenant-scoped requests will check out a connection from this pool
 // and run `set_config('app.restaurant_id', …)` on it before querying (RLS).
 export const db = drizzle(pool, { schema });
+
+// The drizzle transaction handle type (what withTenant hands its callback).
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Run `fn` inside a transaction with app.restaurant_id set for RLS.
+// `true` = transaction-local: auto-clears on commit/rollback, so the GUC can NEVER
+// leak into the next request that reuses this pooled connection. This is the single
+// most important correctness detail of Phase 1.
+export function withTenant<T>(restaurantId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.restaurant_id', ${restaurantId}, true)`);
+    return fn(tx);
+  });
+}

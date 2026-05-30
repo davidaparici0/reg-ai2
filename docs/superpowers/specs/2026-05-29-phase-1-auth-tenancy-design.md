@@ -31,10 +31,12 @@ proven by an isolation test, not assumed.
    server-side revocation, trivially auditable, easy to reason about and defend.
 2. **Password hashing = argon2id** via `@node-rs/argon2` (prebuilt binaries — no native compile in
    the Docker build). OWASP's first-choice, memory-hard, no 72-byte input cap.
-3. **RLS scope = Option Y:** RLS on the **6 tenant *data* tables** only, with a **single DB role**.
-   `users` / `sessions` / `restaurants` are deliberately NOT under RLS because they are read
-   *before* a tenant is known (the login bootstrap). See §5 for the full reasoning — this is the
-   load-bearing decision of the phase.
+3. **RLS scope = Option Y (revised in implementation):** RLS on the **6 tenant *data* tables** only.
+   The app connects as a **non-superuser role `reg_app`** so RLS is actually enforced — the default
+   `reg` role is a SUPERUSER and bypasses RLS even with `FORCE` (found by the isolation test).
+   Migrations keep using `reg`. `users` / `sessions` / `restaurants` are deliberately NOT under RLS
+   because they are read *before* a tenant is known (the login bootstrap). See §5 for the full
+   reasoning — this is the load-bearing decision of the phase.
 
 ---
 
@@ -87,12 +89,17 @@ RLS policies read a per-connection GUC, `app.restaurant_id`. But two operations 
 If `users`/`sessions` were under RLS, those pre-tenant reads would return empty → nobody could log
 in. Therefore those tables are **not** under RLS.
 
-### Option Y — single role, RLS on the 6 data tables
-- One DB role (`reg`, the table owner — Phase 0's existing connection). No second role/DSN.
+### Option Y (revised) — non-superuser app role, RLS on the 6 data tables
+- **The app connects as `reg_app`, a NOSUPERUSER role** (created in migration 0002, granted CRUD on
+  the public schema). This is the fix for a problem found during implementation: the default `reg`
+  role is a SUPERUSER, and superusers bypass RLS unconditionally — even `FORCE` does not constrain
+  them. The app role MUST be non-superuser for RLS to apply at all. Migrations/DDL still run as `reg`
+  (admin) via `MIGRATION_DATABASE_URL`; the app pool uses `DATABASE_URL` (reg_app). Two DSNs, one
+  app role.
 - **RLS + `FORCE ROW LEVEL SECURITY`** on the 6 tables that carry `restaurant_id` and are only ever
   touched *after* the GUC is set: `documents`, `chunks`, `menu_items`, `modules`, `conversations`,
-  `usage_events`. `FORCE` is required because the connecting role owns the tables (owners bypass RLS
-  otherwise).
+  `usage_events`. (`FORCE` is belt-and-suspenders now that `reg_app` is a non-owner non-superuser —
+  the policy applies to it regardless — but it also protects against accidental queries as `reg`.)
 - `users`, `sessions`, `restaurants`: **no RLS**, protected by defense layers 1+2 (tenancy resolved
   from session, never client input; app-layer `WHERE restaurant_id = …` on tenant-scoped reads).
 - Tables added in later phases (`messages`, `message_sources`, `module_progress` — no direct
