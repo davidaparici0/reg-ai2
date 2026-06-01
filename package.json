@@ -11,15 +11,20 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "worker": "tsx --tsconfig tsconfig.worker.json src/worker/main.ts",
+    "worker:dev": "tsx watch --tsconfig tsconfig.worker.json src/worker/main.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.45.2",
+    "gpt-tokenizer": "^3.4.0",
     "next": "16.2.6",
+    "openai": "^6.39.1",
     "pg": "^8.21.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "unpdf": "^1.6.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -33,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.7"
