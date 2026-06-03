@@ -69,7 +69,10 @@ export async function GET(req: Request) {
       status: documents.status,
       error: documents.error,
       createdAt: documents.createdAt,
-      chunkCount: sql<number>`(select count(*)::int from ${chunks} where ${chunks.documentId} = ${documents.id})`,
+      // Table-qualified: ${chunks.documentId} interpolates UNqualified ("document_id"), which
+      // inside `from chunks` binds to chunks.id-vs-document_id and counts 0. Qualify via the
+      // table objects so it is "chunks".document_id = "documents".id (the correlated count).
+      chunkCount: sql<number>`(select count(*)::int from ${chunks} where ${chunks}.document_id = ${documents}.id)`,
     }).from(documents)
       .where(cursor ? lt(documents.createdAt, new Date(cursor)) : undefined)
       .orderBy(desc(documents.createdAt))

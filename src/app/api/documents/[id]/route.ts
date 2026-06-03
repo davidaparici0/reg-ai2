@@ -23,7 +23,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       title: documents.title,
       status: documents.status,
       error: documents.error,
-      chunkCount: sql<number>`(select count(*)::int from ${chunks} where ${chunks.documentId} = ${documents.id})`,
+      // Table-qualified: ${chunks.documentId} interpolates UNqualified ("document_id"), which
+      // inside `from chunks` binds to chunks.id-vs-document_id and counts 0. Qualify via the
+      // table objects so it is "chunks".document_id = "documents".id (the correlated count).
+      chunkCount: sql<number>`(select count(*)::int from ${chunks} where ${chunks}.document_id = ${documents}.id)`,
     }).from(documents).where(eq(documents.id, id)).limit(1));
 
   if (!doc) return errorResponse("NOT_FOUND", "Document not found"); // RLS hides other tenants -> 404
