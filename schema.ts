@@ -36,6 +36,7 @@ import {
   index,
   unique,
   check,
+  customType,
 } from "drizzle-orm/pg-core";
 
 // ---- Enums: make invalid states unrepresentable at the DB level -------------
@@ -105,7 +106,7 @@ export const documents = pgTable(
     restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     sourceType: docSourceType("source_type").notNull(),
-    contentHash: text("content_hash").notNull(), // SHA-256 over normalized text
+    contentHash: text("content_hash").notNull(), // SHA-256 over raw uploaded file bytes (computed at upload, pre-parse — see Phase 2 spec §2.3)
     status: docStatus("status").notNull().default("pending"),
     error: text("error"), // populated on status = failed
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
@@ -147,6 +148,23 @@ export const chunks = pgTable(
     check("chunks_tokens_pos", sql`${t.tokenCount} > 0`),
   ],
 );
+
+// bytea column type (drizzle pg-core has no built-in bytea). node-postgres maps
+// bytea <-> Buffer natively, so no toDriver/fromDriver is needed.
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+
+// ---- document_blobs — FR-005 ------------------------------------------------
+// Raw uploaded file, held between upload (202) and the worker parsing it. Separate
+// table so the hot status/list reads of `documents` never drag MB of binary.
+// restaurant_id is DENORMALIZED so the same tenant_isolation RLS policy applies here,
+// making the privileged claim UPDATE the ONLY cross-tenant op in the pipeline.
+// Dropped on successful processing; kept on failure so a re-upload retry reuses it.
+export const documentBlobs = pgTable("document_blobs", {
+  documentId:   uuid("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
+  restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
+  bytes:        bytea("bytes").notNull(),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---- menu_items — FR-015 ----------------------------------------------------
 // allergens: controlled enum array (safety-critical). dietary_flags: text[] on

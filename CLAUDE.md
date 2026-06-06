@@ -191,15 +191,35 @@ Two design decisions to remember mid-build:
   FORCE. Two DSNs: `DATABASE_URL`=reg_app (app), `MIGRATION_DATABASE_URL`=reg (drizzle-kit). The
   isolation test proves cross-tenant reads return empty + `WITH CHECK` blocks cross-tenant writes.
 
-**Next step → Phase 2 (Document Ingestion, FR-005–009).** PDF end-to-end first: upload → `documents`
-row (202) → polling worker (`SELECT … FOR UPDATE SKIP LOCKED`) parses → chunks deterministically →
-embeds (OpenAI `text-embedding-3-small`, 1536d) → writes `chunks` (with `restaurant_id`) → done/failed.
-The worker writes tenant data, so it must connect as `reg_app` and `withTenant(doc.restaurantId)` or
-RLS returns empty. The `owner|manager`-guarded upload route is where Phase 1's role guard first bites.
+**Phase 2 — COMPLETE.** Document ingestion (FR-005–009), tested + built (66 vitest tests, `tsc`
+clean, `next build` green). Spec/plan: `docs/superpowers/{specs,plans}/2026-05-31-phase-2-document-ingestion*`.
+- **Upload:** `POST /api/documents` (owner|manager, multipart) → raw bytes to `document_blobs`
+  (bytea, migration 0003, RLS), `202 {documentId, pending}`; byte-identical re-upload is
+  idempotent (`200`, failed→pending retry). `content_hash` = SHA-256 of raw bytes (pre-parse).
+- **Worker:** polling loop (`npm run worker`, tsx + `tsconfig.worker.json` aliasing `server-only`).
+  Two-phase: a PRIVILEGED `WORKER_DATABASE_URL` (dev: reg superuser) claims one job
+  (`UPDATE … FOR UPDATE SKIP LOCKED`, status flip = lock) + reclaims stale `processing`; the work
+  (read blob → parse `unpdf` → deterministic chunk `gpt-tokenizer`/cl100k → embed
+  `text-embedding-3-small` 1536d → write `chunks` + `usage_events`, drop blob, mark done|failed)
+  runs as `reg_app` under `withTenant`. Blob kept on failure for retry.
+- **Status:** `GET /api/documents` (cursor) + `GET /api/documents/:id` (chunkCount when done; 404s
+  other tenants). Determinism, dedup, failure path, and cross-tenant isolation all covered by tests.
+  (Gotcha found in build: the done-state `chunkCount` correlated subquery must **table-qualify** its
+  columns via the table objects — `${chunks}.document_id = ${documents}.id` — because interpolating
+  `${chunks.documentId}` into a `sql` template renders the column UNqualified, so inside `from chunks`
+  it binds to `chunks` on both sides and counts 0. Caught by the Task 11 e2e test.)
 
 Known gaps carried forward: login rate-limiting (FR-026, Phase 7); RLS on `messages` /
 `message_sources` / `module_progress` (their phases); `reg_app`'s dev password is committed in
-migration 0002 — prod provisions the role + secret via infra (Phase 8).
+migration 0002 — prod provisions the role + secret via infra (Phase 8). New in Phase 2: least-priv
+`reg_worker` role (dev reuses `reg` via `WORKER_DATABASE_URL`) + a Docker Compose worker service →
+Phase 8; DOCX/text parsers → Stretch; per-tenant upload limits (FR-026) → Phase 7; Vercel AI SDK
+arrives in Phase 3 (generation).
+
+**Next step → Phase 3 (Retrieval + grounded Q&A, FR-010–014)** — the crown jewel. Tenant-scoped
+vector search over `chunks` (D2 filtered-HNSW recall ladder in play), the grounding threshold +
+prompt template David finalizes (per `docs/rag.md`), and the not-in-materials fallback. Verified
+against `eval/eval-set.yaml` + the isolation check.
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
