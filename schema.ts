@@ -208,11 +208,15 @@ export const messages = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
     role: messageRole("role").notNull(),
     content: text("content").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("messages_conversation_idx").on(t.conversationId)],
+  (t) => [
+    index("messages_conversation_idx").on(t.conversationId),
+    index("messages_restaurant_idx").on(t.restaurantId),
+  ],
 );
 
 // ---- message_sources — FR-011 / FR-014 --------------------------------------
@@ -223,11 +227,13 @@ export const messageSources = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     messageId: uuid("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
     chunkId: uuid("chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),
+    restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
     similarity: real("similarity"), // cosine similarity at retrieval time — a sort key, never summed
   },
   (t) => [
     index("message_sources_message_idx").on(t.messageId),
     index("message_sources_chunk_idx").on(t.chunkId), // "which answers cited this chunk?" + cascade
+    index("message_sources_restaurant_idx").on(t.restaurantId),
   ],
 );
 
