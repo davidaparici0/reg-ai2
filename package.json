@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "worker": "tsx --tsconfig tsconfig.worker.json src/worker/main.ts",
-    "worker:dev": "tsx watch --tsconfig tsconfig.worker.json src/worker/main.ts"
+    "worker:dev": "tsx watch --tsconfig tsconfig.worker.json src/worker/main.ts",
+    "eval:seed": "tsx --tsconfig tsconfig.worker.json eval/seed.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
