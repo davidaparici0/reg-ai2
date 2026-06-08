@@ -14,7 +14,8 @@
     "db:studio": "drizzle-kit studio",
     "worker": "tsx --tsconfig tsconfig.worker.json src/worker/main.ts",
     "worker:dev": "tsx watch --tsconfig tsconfig.worker.json src/worker/main.ts",
-    "eval:seed": "tsx --tsconfig tsconfig.worker.json eval/seed.ts"
+    "eval:seed": "tsx --tsconfig tsconfig.worker.json eval/seed.ts",
+    "eval:run": "tsx --tsconfig tsconfig.worker.json eval/run.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
@@ -26,6 +27,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "unpdf": "^1.6.2",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
