@@ -145,6 +145,9 @@ describe("PATCH /api/menu-items/:id", () => {
     const rows = await menuChunks(restaurant.id);
     expect(rows).toHaveLength(1);
     expect(rows[0].text).toContain("Allergens (recorded): sesame.");
+    // Clearing back to null re-renders the safe empty wording (menuCard null-array guard).
+    expect((await patch(cookie, created.menuItem.id, { allergens: null })).status).toBe(200);
+    expect((await menuChunks(restaurant.id))[0].text).toContain("Allergens (recorded): none recorded.");
   });
 
   it("active=false removes the card; active=true restores it", async () => {
@@ -170,6 +173,15 @@ describe("PATCH /api/menu-items/:id", () => {
 });
 
 describe("DELETE /api/menu-items/:id", () => {
+  it("guards: 401 anonymous, 403 trainee, 404 non-uuid", async () => {
+    const { cookie, restaurant } = await registerOwner();
+    const created = await (await post(cookie, { name: "Soup" })).json();
+    expect((await del(null, created.menuItem.id)).status).toBe(401);
+    const trainee = await makeUserCookie(restaurant.id, "trainee");
+    expect((await del(trainee.cookie, created.menuItem.id)).status).toBe(403);
+    expect((await del(cookie, "not-a-uuid")).status).toBe(404);
+  });
+
   it("204 deletes the row and its card; foreign id 404s", async () => {
     const a = await registerOwner();
     const b = await registerOwner();

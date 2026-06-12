@@ -32,6 +32,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const updated = await withTenant(rid, async (tx) => {
       await lockMenuRebuild(tx, rid);
+      // Only fields present in the patch — absent keys must not overwrite existing values
+      // (explicit null IS present and clears the nullable column).
       const [row] = await tx.update(menuItems).set({
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
