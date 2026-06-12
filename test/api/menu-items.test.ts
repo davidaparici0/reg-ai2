@@ -8,6 +8,7 @@ vi.mock("@/lib/ai/embeddings", () => ({
 
 import { eq, and, asc } from "drizzle-orm";
 import { POST, GET } from "@/app/api/menu-items/route";
+import { PATCH, DELETE } from "@/app/api/menu-items/[id]/route";
 import { withTenant } from "@/lib/db";
 import { documents, chunks, menuItems } from "@/db/schema";
 import { menuDocContentHash } from "@/lib/menu/rebuild";
@@ -113,5 +114,71 @@ describe("GET /api/menu-items", () => {
     expect(bodyA.items).toHaveLength(1);
     expect(bodyA.items[0].active).toBe(false);               // inactive listed for managers
     expect(bodyA.nextCursor).toBeNull();
+  });
+});
+
+const patch = (cookie: string | null, id: string, body: unknown) =>
+  PATCH(new Request(`http://x/api/menu-items/${id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  }), { params: Promise.resolve({ id }) });
+const del = (cookie: string | null, id: string) =>
+  DELETE(new Request(`http://x/api/menu-items/${id}`, {
+    method: "DELETE", headers: cookie ? { cookie } : {},
+  }), { params: Promise.resolve({ id }) });
+
+describe("PATCH /api/menu-items/:id", () => {
+  it("400 on an empty patch; 403 for trainee", async () => {
+    const { cookie, restaurant } = await registerOwner();
+    const created = await (await post(cookie, { name: "Soup" })).json();
+    expect((await patch(cookie, created.menuItem.id, {})).status).toBe(400);
+    const trainee = await makeUserCookie(restaurant.id, "trainee");
+    expect((await patch(trainee.cookie, created.menuItem.id, { name: "X" })).status).toBe(403);
+  });
+
+  it("updates fields and swaps the card immediately (FR-017 demo path)", async () => {
+    const { cookie, restaurant } = await registerOwner();
+    const created = await (await post(cookie, { name: "Grilled Chicken", allergens: null })).json();
+    const res = await patch(cookie, created.menuItem.id, { allergens: ["sesame"] });
+    expect(res.status).toBe(200);
+    const rows = await menuChunks(restaurant.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toContain("Allergens (recorded): sesame.");
+  });
+
+  it("active=false removes the card; active=true restores it", async () => {
+    const { cookie, restaurant } = await registerOwner();
+    const created = await (await post(cookie, { name: "Soup" })).json();
+    await patch(cookie, created.menuItem.id, { active: false });
+    expect(await menuChunks(restaurant.id)).toHaveLength(0);
+    await patch(cookie, created.menuItem.id, { active: true });
+    expect(await menuChunks(restaurant.id)).toHaveLength(1);
+  });
+
+  it("404 for foreign-tenant, missing, and non-uuid ids (anti-enumeration)", async () => {
+    const a = await registerOwner();
+    const b = await registerOwner();
+    const created = await (await post(a.cookie, { name: "Soup" })).json();
+    expect((await patch(b.cookie, created.menuItem.id, { name: "Steal" })).status).toBe(404);
+    expect((await patch(a.cookie, crypto.randomUUID(), { name: "X" })).status).toBe(404);
+    expect((await patch(a.cookie, "not-a-uuid", { name: "X" })).status).toBe(404);
+    // and the foreign write changed nothing:
+    const rows = await menuChunks(a.restaurant.id);
+    expect(rows[0].text).toContain("Dish: Soup.");
+  });
+});
+
+describe("DELETE /api/menu-items/:id", () => {
+  it("204 deletes the row and its card; foreign id 404s", async () => {
+    const a = await registerOwner();
+    const b = await registerOwner();
+    const created = await (await post(a.cookie, { name: "Soup" })).json();
+    expect((await del(b.cookie, created.menuItem.id)).status).toBe(404);
+    const res = await del(a.cookie, created.menuItem.id);
+    expect(res.status).toBe(204);
+    const items = await withTenant(a.restaurant.id, (tx) => tx.select().from(menuItems));
+    expect(items).toHaveLength(0);
+    expect(await menuChunks(a.restaurant.id)).toHaveLength(0);
   });
 });
