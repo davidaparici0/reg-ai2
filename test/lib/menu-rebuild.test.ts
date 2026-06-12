@@ -68,12 +68,12 @@ describe("rebuildMenuChunks", () => {
       await lockMenuRebuild(tx, restaurant.id);
       await rebuildMenuChunks(tx, restaurant.id, user.id);
     });
+    await run();
     const doc = await withTenant(restaurant.id, async (tx) =>
-      ensureMenuDocument(tx, restaurant.id));
+      ensureMenuDocument(tx, restaurant.id));   // doc already exists; this only looks it up
     const texts = () => withTenant(restaurant.id, (tx) =>
       tx.select({ text: chunks.text }).from(chunks)
         .where(eq(chunks.documentId, doc.id)).orderBy(asc(chunks.chunkIndex)));
-    await run();
     const first = await texts();
     await run();
     const second = await texts();

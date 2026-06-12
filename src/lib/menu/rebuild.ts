@@ -19,7 +19,10 @@ export const menuDocContentHash = (restaurantId: string) => `menu:${restaurantId
 // pg_advisory_xact_lock: transaction-scoped, auto-released on commit/rollback.
 // hashtextextended(text, seed) -> bigint key; namespaced so only MENU writes contend.
 export async function lockMenuRebuild(tx: Tx, restaurantId: string): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"menu:" + restaurantId}, 0))`);
+  // Same namespace string as the doc's content_hash so the two can't silently diverge;
+  // hashtextextended maps it into the bigint advisory-lock key space (a future
+  // "module:<rid>" lock would hash to a different key and never contend with menu writes).
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${menuDocContentHash(restaurantId)}, 0))`);
 }
 
 export async function ensureMenuDocument(tx: Tx, restaurantId: string): Promise<{ id: string }> {
@@ -37,6 +40,7 @@ export async function ensureMenuDocument(tx: Tx, restaurantId: string): Promise<
 // Full-menu rebuild (Approach A, spec §2.4): tens of short cards => one bounded embed
 // call (~$0.0001). Deterministic card order (name, id) keeps rebuilds reproducible.
 // userId: the acting user for usage attribution; null for system paths (seeder).
+/** Callers MUST `await lockMenuRebuild(tx, rid)` in the SAME tx first — see file header. */
 export async function rebuildMenuChunks(
   tx: Tx, restaurantId: string, userId: string | null,
 ): Promise<{ cardCount: number }> {
