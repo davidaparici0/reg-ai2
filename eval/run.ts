@@ -29,7 +29,7 @@ async function main() {
   const ridA = await restaurantId(RESTAURANT_A);
   const ridB = await restaurantId(RESTAURANT_B);
 
-  const rows: { id: string; fb: boolean; safety: boolean; top1: number; gate: boolean; topDoc: string; leak: boolean }[] = [];
+  const rows: { id: string; fb: boolean; safety: boolean; top1: number; gate: boolean; topDoc: string; leak: boolean; modelDeclined: boolean }[] = [];
 
   for (const q of set.questions) {
     const { vectors } = await embed([q.question]);
@@ -44,15 +44,24 @@ async function main() {
     const aIds = new Set(hitsA.map((h) => h.chunkId));
     const leak = hitsB.some((h) => aIds.has(h.chunkId));
 
-    rows.push({
+    const row = {
       id: q.id, fb: q.expects_fallback, safety: q.safety_critical,
       top1: Number(top1.toFixed(4)), gate, topDoc: hitsA[0]?.documentTitle ?? "—", leak,
-    });
+      modelDeclined: false, // only meaningful for above-gate fallbacks (layer 2)
+    };
+    rows.push(row);
 
-    // Show the generated answer for human pass_condition scoring on answerable questions.
     if (gate && !q.expects_fallback) {
+      // Show the generated answer for human pass_condition scoring on answerable questions.
       const out = await generate(buildPrompt(RESTAURANT_A, hitsA, q.question));
-      console.log(`\n[${q.id}] ${q.question}\n  top1=${top1.toFixed(3)} (${rows[rows.length - 1].topDoc})\n  ANSWER: ${out.text}`);
+      console.log(`\n[${q.id}] ${q.question}\n  top1=${top1.toFixed(3)} (${row.topDoc})\n  ANSWER: ${out.text}`);
+    } else if (gate && q.expects_fallback) {
+      // Topical near-miss (Q08-class): above the gate, so the DECLINE must come from the
+      // model's in-context rule (layer 2). Run it for real and check for exact FALLBACK_TEXT —
+      // this is the actual FR-012 contract: the user receives the decline, by gate OR model.
+      const out = await generate(buildPrompt(RESTAURANT_A, hitsA, q.question));
+      row.modelDeclined = out.text === FALLBACK_TEXT;
+      console.log(`\n[${q.id}] ${q.question}\n  top1=${top1.toFixed(3)} (${row.topDoc})\n  ABOVE GATE — model declined: ${row.modelDeclined ? "YES" : "NO"}\n  MODEL SAID: ${out.text}`);
     }
   }
 
@@ -67,13 +76,22 @@ async function main() {
   const minAnswerable = Math.min(...answerable.map((r) => r.top1));
   const maxFallback = Math.max(...fallbacks.map((r) => r.top1));
   console.log(`\nanswerable min top1 = ${minAnswerable.toFixed(4)}; fallback max top1 = ${maxFallback.toFixed(4)}`);
-  console.log(`suggested THRESHOLD ∈ (${maxFallback.toFixed(4)}, ${minAnswerable.toFixed(4)}] — bias UP near safety-critical lines`);
+  if (maxFallback < minAnswerable) {
+    console.log(`suggested THRESHOLD ∈ (${maxFallback.toFixed(4)}, ${minAnswerable.toFixed(4)}] — bias UP near safety-critical lines`);
+  } else {
+    console.log(`gap INVERTED (fallback max ≥ answerable min): no single threshold separates topical near-misses.`);
+    console.log(`Pick THRESHOLD below ${minAnswerable.toFixed(4)} so answerables clear; above-gate fallbacks must decline via the model (layer 2).`);
+  }
 
   // ---- Auto-asserts ------------------------------------------------------------
-  const fallbackOk = fallbacks.every((r) => !r.gate);                 // all three decline at current THRESHOLD
+  // FR-012 contract: every expects_fallback question ends in FALLBACK_TEXT — declined at the
+  // gate (cheap, deterministic) OR by the model's in-context rule (topical near-misses).
+  const fallbackOk = fallbacks.every((r) => !r.gate || r.modelDeclined);
   const answerableGateOk = answerable.every((r) => r.gate);           // all answerable clear it
   const noLeak = rows.every((r) => !r.leak);                          // zero cross-tenant leaks
-  console.log(`\nfallbacks decline: ${fallbackOk ? "PASS" : "FAIL"}`);
+  const gateDeclines = fallbacks.filter((r) => !r.gate).map((r) => r.id).join(",");
+  const modelDeclines = fallbacks.filter((r) => r.gate && r.modelDeclined).map((r) => r.id).join(",");
+  console.log(`\nfallbacks decline: ${fallbackOk ? "PASS" : "FAIL"} (gate: ${gateDeclines || "—"}; model: ${modelDeclines || "—"})`);
   console.log(`answerable clear gate: ${answerableGateOk ? "PASS" : "FAIL"} (judge top-doc relevance by eye for ≥90%)`);
   console.log(`isolation (0 leaks): ${noLeak ? "PASS" : "FAIL"}`);
 

@@ -4,25 +4,34 @@
 import type { ChatMessage } from "@/lib/ai/generate";
 import type { RetrievedChunk } from "@/lib/qa/retrieve";
 
-// DAVID: finalize this exact refusal string.
+// FINAL (calibrated 2026-06-12). The exact string is load-bearing: answer.ts compares
+// answers against it verbatim to detect a model-side decline (layer 2 of the grounding
+// strategy), and the eval's fallback gate asserts it byte-for-byte. Change it only with
+// a full eval:run re-verification.
 export const FALLBACK_TEXT =
   "I don't have that in this restaurant's materials — please check with your manager.";
 
 export function buildPrompt(restaurantName: string, chunks: RetrievedChunk[], question: string): ChatMessage[] {
   const context = chunks.map((c, i) => `[${i + 1}] ${c.text}`).join("\n\n");
-  // DAVID: finalize this wording. Keep the four rules (answer only from context; exact
-  // FALLBACK_TEXT on a miss; allergen/food-safety caution; concise).
+  // FINAL wording (polished + eval-verified). The four rules are requirements (rag.md §5):
+  // context-only answers; exact FALLBACK_TEXT on a miss; allergen/food-safety caution;
+  // concise. Rule 4's language-matching clause codifies behavior Q14 verified empirically.
   const system =
-    `You are a training assistant for ${restaurantName}. Answer ONLY using the numbered ` +
-    `context below, which comes from this restaurant's own materials.\n\n` +
+    `You are the training assistant for ${restaurantName}. Staff ask you questions ` +
+    `mid-shift; answer them from this restaurant's own materials — never from general ` +
+    `knowledge. The numbered CONTEXT below is retrieved from ${restaurantName}'s uploaded ` +
+    `documents and is your only source of truth.\n\n` +
     `Rules:\n` +
-    `- If the context does not contain the answer, reply EXACTLY: "${FALLBACK_TEXT}" ` +
-    `Do not use outside knowledge. Do not guess.\n` +
-    `- Cite the context you used by its [number].\n` +
-    `- For allergen, dietary, or food-safety questions: state only what the context explicitly ` +
-    `says. If it is incomplete or absent, say so and advise confirming with the kitchen or ` +
-    `manager. Never call something "safe" beyond what the context supports.\n` +
-    `- Be concise and practical — staff may be reading this mid-shift.\n\n` +
+    `1. Answer using ONLY the CONTEXT. If it does not contain the answer, reply with ` +
+    `exactly: "${FALLBACK_TEXT}" — nothing more. Never guess and never fill gaps with ` +
+    `outside knowledge.\n` +
+    `2. Cite every fact you use by its context number, like [1] or [2].\n` +
+    `3. Allergen, dietary, and food-safety questions are safety-critical: state only what ` +
+    `the CONTEXT explicitly says, name exactly the dishes and ingredients it lists, and ` +
+    `always advise confirming with the kitchen or a manager. Never declare anything "safe" ` +
+    `or free of an allergen beyond what the CONTEXT states.\n` +
+    `4. Be brief and practical — short paragraphs or tight lists a server can scan in ` +
+    `seconds. Answer in the language the question was asked in.\n\n` +
     `CONTEXT:\n${context}`;
   return [
     { role: "system", content: system },

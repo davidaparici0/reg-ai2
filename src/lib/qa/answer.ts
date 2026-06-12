@@ -9,8 +9,16 @@ import { generate, completionCostUsd, COMPLETION_MODEL } from "@/lib/ai/generate
 import { retrieve } from "@/lib/qa/retrieve";
 import { buildPrompt, FALLBACK_TEXT } from "@/lib/qa/prompt";
 
-// DAVID owns this number. Placeholder — calibrate from eval/run.ts (rag.md §4).
-export const THRESHOLD = 0.35;
+// CALIBRATED 2026-06-12 against eval/eval-set.yaml (see eval:run distribution + rag.md §4).
+// The eval showed an INVERTED gap: hardest answerable (Q05, safety) top1=0.4906 sits BELOW the
+// hardest fallback (Q08, topical near-miss) at 0.5267 — similarity measures topicality, not
+// answerability, so no threshold separates that class. Strategy: the gate is layer 1 of two.
+// 0.46 sits in the clean window (0.4223, 0.4906] — biased UP from the 0.4565 midpoint per the
+// safety rule — so every answerable question clears (Q05 +0.031) and the safety-critical
+// fallback Q13 declines deterministically (+0.038 margin). Above-gate topical near-misses
+// (Q08-class) are layer 2's job: the prompt's decline rule, probe-verified to emit
+// FALLBACK_TEXT exactly. Recalibrate whenever the embedding model or corpus shape changes.
+export const THRESHOLD = 0.46;
 const K = 5;
 
 export type Source = {
