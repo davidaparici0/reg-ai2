@@ -72,32 +72,54 @@ This is the single most consequential number in the product. It's the cutoff tha
 3. When safety-critical (allergen/food-safety) questions are near the line, **bias toward
    refusing** — a missed answer is recoverable, a wrong allergen answer is not.
 
-**Starting placeholder (NOT a settled value):** gate on **top-1 similarity ≥ ~0.35**, and
-require at least one chunk above it. Treat this as a hypothesis to confirm or move once you
-see the eval distribution — own the final number; it's exactly what you'll be asked to justify.
+**CALIBRATED (2026-06-12): `THRESHOLD = 0.46`** — set from the measured eval distribution,
+not the method's clean-gap assumption, because the data refuted that assumption:
+
+> The eval distribution showed an **inverted gap**: the hardest answerable question (Q05,
+> tree-nut allergy, top-1 = 0.4906) scores *below* the hardest fallback (Q08, non-alcoholic
+> pairing, 0.5267). Q08 is a topical near-miss — saturated with wine-pairing vocabulary the
+> corpus covers, asking for a fact it doesn't contain — and cosine similarity measures
+> *topicality*, not *answerability*, so no single cutoff separates that class. We therefore
+> run grounding as **two layers**: the 0.46 gate sits in the clean window (0.4223, 0.4906],
+> biased up from the midpoint per rule 3, so all 12 answerable questions clear it (Q05 margin
+> +0.031) and the off-topic fallbacks — including safety-critical Q13 (intoxicated guest,
+> 0.4223) — decline deterministically before any LLM call (margin +0.038). Above-gate topical
+> near-misses are caught by the prompt's exact-refusal rule (layer 2), which `eval:run` now
+> verifies end-to-end: Q08's generation returns `FALLBACK_TEXT` byte-for-byte. The
+> alternative — a gate at ~0.53 above all fallbacks — would wrongly refuse an answerable
+> allergy question and lives in a 0.015-wide window; refusing more wasn't safer, it was
+> just blinder.
+
+Recalibrate whenever the embedding model, chunking, or corpus shape changes (it is a
+property of the distribution, not a constant of the system).
 
 ---
 
-## 5. The prompt template  ⟵ **YOURS TO FINALIZE, David**
+## 5. The prompt template  ⟵ **FINALIZED (2026-06-12)**
 
-Per the AI-usage discipline: write this yourself and make it yours. Below is a *first draft*
-to react to — the rules it encodes (answer only from context, cite, decline otherwise,
-extra caution on safety) are the requirements; the wording is yours.
+The live template is `src/lib/qa/prompt.ts` — that file is the source of truth. The four
+rules below are the *requirements* it encodes; the final wording was polished and then
+verified against the full eval set (exact declines on Q08/Q13/Q15, cautious allergen
+answers on Q03/Q04/Q05/Q12, Spanish answer to Q14).
 
 ```text
 SYSTEM:
-You are a training assistant for {restaurant_name}. Answer ONLY using the numbered
-context below, which comes from this restaurant's own materials. 
+You are the training assistant for {restaurant_name}. Staff ask you questions mid-shift;
+answer them from this restaurant's own materials — never from general knowledge. The
+numbered CONTEXT below is retrieved from {restaurant_name}'s uploaded documents and is
+your only source of truth.
 
 Rules:
-- If the context does not contain the answer, reply exactly: "I don't have that in
-  {restaurant_name}'s materials — please check with your manager." Do not use outside
-  knowledge. Do not guess.
-- Cite the context you used by its [number].
-- For allergens, dietary, or food-safety questions: only state what the context explicitly
-  says. If it is incomplete or absent, say so and advise confirming with the kitchen/manager.
-  Never reassure that something is "safe" beyond what the context supports.
-- Be concise and practical — staff may be reading this mid-shift.
+1. Answer using ONLY the CONTEXT. If it does not contain the answer, reply with exactly:
+   "I don't have that in this restaurant's materials — please check with your manager."
+   — nothing more. Never guess and never fill gaps with outside knowledge.
+2. Cite every fact you use by its context number, like [1] or [2].
+3. Allergen, dietary, and food-safety questions are safety-critical: state only what the
+   CONTEXT explicitly says, name exactly the dishes and ingredients it lists, and always
+   advise confirming with the kitchen or a manager. Never declare anything "safe" or free
+   of an allergen beyond what the CONTEXT states.
+4. Be brief and practical — short paragraphs or tight lists a server can scan in seconds.
+   Answer in the language the question was asked in.
 
 CONTEXT:
 [1] {chunk_1_text}
@@ -107,6 +129,11 @@ CONTEXT:
 USER:
 {question}
 ```
+
+Two deliberate choices: the refusal string is **fixed text** (not per-restaurant) because
+`answer.ts` and the eval compare against it byte-for-byte — it is the layer-2 grounding
+signal, so reproducibility beats personalization. And rule 4's language-matching clause
+codifies behavior Q14 demonstrated empirically rather than leaving it to chance.
 
 Notes on why each rule exists:
 - *"Answer ONLY from context"* + the exact refusal string is the grounding/fallback (FR-012)

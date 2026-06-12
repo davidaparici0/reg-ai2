@@ -103,7 +103,7 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 
 - **Phase D — Design lock.** ✅ DONE. Schema, `docs/architecture.md`, `docs/rag.md`,
   `docs/product-spec.md`, `eval/eval-set.yaml`, stack confirmed.
-- **Phase 0 — Skeleton & env.** ◀ CURRENT. Next.js app + Postgres/pgvector in Docker,
+- **Phase 0 — Skeleton & env.** ✅ DONE. Next.js app + Postgres/pgvector in Docker,
   `GET /api/health` confirming DB + vector extension, Drizzle migrations, server-only
   `.env`, ingestion shape decided (done: polling worker). FR-024.
 - **Phase 1 — Auth & multi-tenancy.** FR-001–004. RLS implemented here (sets the
@@ -111,7 +111,7 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 2 — Ingestion pipeline** (first vertical slice). FR-005–009. PDF end-to-end
   before generalizing.
 - **Phase 3 — Retrieval + grounded Q&A** (the crown jewel). FR-010–014.
-- **Phase 4 — Menu management + menu-aware answers.** FR-015–017.
+- **Phase 4 — Menu management + menu-aware answers.** ◀ CURRENT. FR-015–017.
 - **Phase 5 — Training modules + progress.** FR-018–020.
 - **Phase 6 — Analytics dashboard.** FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** FR-026–027, injection resistance.
@@ -126,13 +126,16 @@ Two design decisions to remember mid-build:
 
 ---
 
-## Two RAG values left for David to finalize (per `docs/rag.md`)
+## The two RAG values — FINALIZED in Phase 3 (per `docs/rag.md` §4–5)
 
-- **Grounding threshold** — placeholder ~0.35 top-1 cosine similarity. Calibrate against
-  the eval set, don't guess. Bias toward refusing on safety-critical questions near the line.
-- **Prompt template** — first draft in `docs/rag.md`; David writes the final wording.
-  The rules (answer only from context, cite by [n], decline otherwise, extra allergen
-  caution) are requirements; the phrasing is his.
+- **Grounding threshold = 0.46**, calibrated against the eval set. Key finding: the gap was
+  INVERTED (hardest answerable 0.4906 < hardest fallback 0.5267 — similarity measures
+  topicality, not answerability), so grounding is **two layers**: the gate declines off-topic
+  deterministically; the prompt's exact-refusal rule declines above-gate topical near-misses
+  (verified end-to-end by `eval:run`). Recalibrate if the embedding model/chunking/corpus changes.
+- **Prompt template** — final wording in `src/lib/qa/prompt.ts` (source of truth; mirrored in
+  rag.md §5). Four rules: context-only, cite by [n], exact FALLBACK_TEXT decline, allergen
+  caution; plus language matching. FALLBACK_TEXT is byte-exact load-bearing (layer-2 signal).
 
 ---
 
@@ -216,10 +219,33 @@ migration 0002 — prod provisions the role + secret via infra (Phase 8). New in
 Phase 8; DOCX/text parsers → Stretch; per-tenant upload limits (FR-026) → Phase 7; Vercel AI SDK
 arrives in Phase 3 (generation).
 
-**Next step → Phase 3 (Retrieval + grounded Q&A, FR-010–014)** — the crown jewel. Tenant-scoped
-vector search over `chunks` (D2 filtered-HNSW recall ladder in play), the grounding threshold +
-prompt template David finalizes (per `docs/rag.md`), and the not-in-materials fallback. Verified
-against `eval/eval-set.yaml` + the isolation check.
+**Phase 3 — COMPLETE.** Retrieval + grounded Q&A (FR-010–014), the crown jewel — tested + built
+(83 vitest tests, `tsc` clean, `next build` green; eval gates all PASS). Spec/plan:
+`docs/superpowers/{specs,plans}/2026-06-06-phase-3-*`.
+- **Migration 0004:** `restaurant_id` + RLS on `conversations`/`messages`/`message_sources`
+  (closes part of the Phase-1 RLS gap; `module_progress` remains for its phase).
+- **Pipeline (`/api/ask`, owner|manager|staff):** embed question → tenant-scoped top-5 vector
+  search (`qa/retrieve.ts`, D2 settings: `hnsw.ef_search` raised per rag.md) → **two-layer
+  grounding** → persist conversation + both messages + sources + usage events in ONE tenant
+  transaction (FR-013) → `AskResponse {answer, grounded, sources[], conversationId}`.
+- **Two-layer grounding (the Phase-3 finding):** eval showed an INVERTED gap — hardest
+  answerable Q05 (0.4906) sits BELOW hardest fallback Q08 (0.5267, topical near-miss) —
+  similarity measures topicality, not answerability. Layer 1: calibrated `THRESHOLD = 0.46`
+  (window (0.4223, 0.4906], biased up per safety rule) declines off-topic before any LLM call,
+  incl. safety-critical Q13. Layer 2: the prompt's exact-`FALLBACK_TEXT` refusal handles
+  above-gate near-misses; `eval:run` executes those for real and asserts byte-equality.
+  Full rationale: rag.md §4 + `Calibration/grounding-threshold-strategy.md` (outside repo).
+- **Generation seam:** `ai/generate.ts`, gpt-4.1-mini @ temp 0, server-only key, per-call
+  cost tracked to `usage_events` (FR-023 groundwork). Menu items render as deterministic text
+  cards at ingestion (`qa/menu-card.ts`, FR-014) so allergen/dietary flags are retrievable.
+- **Eval harness:** `eval:seed` (idempotent demo corpus, real chunk+embed path, tenant-B foil)
+  + `eval:run` (15-question distribution, four auto-gates: fallbacks decline [gate: Q13,Q15;
+  model: Q08] · answerable clear gate [15/15 top-doc] · isolation 0 leaks · e2e persisted
+  probe; exits 1 on regression). Needs funded `OPENAI_API_KEY`; vitest never calls OpenAI.
+
+**Next step → Phase 4 (Menu management + menu-aware answers, FR-015–017).** Owner/manager
+CRUD for `menu_items` (RLS already live), re-render + re-embed menu cards on change, and
+menu-aware retrieval verified against the eval set (menu Qs already pass: Q01/Q02/Q04/Q14).
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
