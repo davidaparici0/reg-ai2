@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   } catch (err) {
     // The tx rolled back (row included) — honest, retryable failure. Overwhelmingly the
     // embed call; a DB failure lands here too and the message stays true (nothing changed).
-    console.error("menu-items POST rebuild failed:", err);
+    console.error("[/api/menu-items] POST failed:", err);
     return errorResponse("EMBED_FAILED", "Menu embedding failed; nothing was changed. Retry the request.");
   }
 }

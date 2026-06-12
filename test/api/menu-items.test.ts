@@ -102,6 +102,7 @@ describe("POST /api/menu-items", () => {
 
 describe("GET /api/menu-items", () => {
   it("lists own items only (isolation), newest-first, includes inactive", async () => {
+    expect((await list(null)).status).toBe(401);             // no session
     const a = await registerOwner();
     const b = await registerOwner();
     await post(a.cookie, { name: "A dish", active: false });
