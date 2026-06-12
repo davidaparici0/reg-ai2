@@ -15,8 +15,11 @@ describe("CreateMenuItem", () => {
   });
 
   it("requires name and applies defaults-by-absence for the rest", () => {
-    expect(CreateMenuItem.safeParse({ name: "Soup" }).success).toBe(true);
+    const r = CreateMenuItem.safeParse({ name: "Soup" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.description).toBeUndefined(); // absent stays absent
     expect(CreateMenuItem.safeParse({}).success).toBe(false);
+    expect(CreateMenuItem.safeParse({ name: "   " }).success).toBe(false); // whitespace-only name
   });
 
   it("rejects unknown keys (strict)", () => {
@@ -36,6 +39,8 @@ describe("CreateMenuItem", () => {
     expect(CreateMenuItem.safeParse({ name: "Soup", price: 12.5 }).success).toBe(true);
     expect(CreateMenuItem.safeParse({ name: "Soup", price: 12.555 }).success).toBe(false);
     expect(CreateMenuItem.safeParse({ name: "Soup", price: -1 }).success).toBe(false);
+    expect(CreateMenuItem.safeParse({ name: "Soup", price: null }).success).toBe(true);  // nullable
+    expect(CreateMenuItem.safeParse({ name: "Soup", price: 0 }).success).toBe(true);     // lower boundary
   });
 });
 
@@ -57,5 +62,6 @@ describe("priceToDb", () => {
     expect(priceToDb(12.5)).toBe("12.50");
     expect(priceToDb(null)).toBeNull();
     expect(priceToDb(undefined)).toBeUndefined();
+    expect(priceToDb(0)).toBe("0.00");
   });
 });
