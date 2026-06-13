@@ -139,11 +139,38 @@ grounding-over-fluency.
 
 ---
 
-## 3. Deferred — defined at the start of their phase (not now)
+## 3. Menu items (`/api/menu-items`) — Phase 4, FINAL
+
+Structured menu CRUD (FR-015). **Every write synchronously rebuilds the synthetic Menu
+document's chunks inside the same tenant transaction (FR-017)** — when the write returns
+2xx, `/api/ask` already answers from the new data. Inactive items are listed here but
+invisible to Q&A (no menu card).
+
+| Route | Roles | Success |
+|---|---|---|
+| `POST /api/menu-items` | owner\|manager | `201 {menuItem}` |
+| `GET /api/menu-items?cursor=&limit=` | any authenticated | `200 {items, nextCursor}` (createdAt desc, page 20, incl. inactive) |
+| `PATCH /api/menu-items/:id` | owner\|manager | `200 {menuItem}` (partial; ≥1 field; explicit `null` clears nullable fields; `name` non-nullable) |
+| `DELETE /api/menu-items/:id` | owner\|manager | `204` (hard delete) |
+
+Body fields (Zod, unknown keys rejected): `name` 1–200 (required on POST) ·
+`description` ≤2000, nullable · `ingredients` string[1–100][], ≤100, nullable ·
+`allergens` enum[] from the DB `allergen` vocabulary, ≤20, nullable · `dietaryFlags`
+lowercased tokens `[a-z0-9_]{1,32}`[], ≤20, nullable · `price` number ≥0, ≤2dp
+(serialized back as a 2dp string, e.g. `"36.00"`) · `active` boolean (default true;
+the "86'd tonight" toggle).
+
+Errors: standard envelope — `400` validation · `401` · `403` (write below manager) ·
+`404` foreign-tenant/missing/non-uuid id (anti-enumeration) · **`502 EMBED_FAILED`**:
+the embedding call failed and the WHOLE write rolled back (row included) — nothing
+changed; retry the request.
+
+---
+
+## 4. Deferred — defined at the start of their phase (not now)
 
 | Surface | Phase | Why deferred |
 |---|---|---|
-| Menu CRUD (`/api/menu-items`) | 4 | Shape depends on how menu data feeds retrieval — a Phase 4 decision |
 | Module CRUD + progress (`/api/modules`, `/api/progress`) | 5 | Module content structure isn't firmed up until Phase 5 |
 | Analytics/dashboard (`/api/analytics/*`) | 6 | Aggregations defined once we know what signals exist to aggregate |
 | Streaming variant of `/api/ask` | 3 (polish) | JSON contract proven first; streaming is additive UX |
