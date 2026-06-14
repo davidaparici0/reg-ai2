@@ -137,3 +137,75 @@ describe("DELETE /api/modules/:id", () => {
     expect((await getOne(a.cookie, id)).status).toBe(404);
   });
 });
+
+import { PUT, GET as ROSTER } from "@/app/api/modules/[id]/progress/route";
+
+const putProgress = (cookie: string | null, id: string, body: unknown) =>
+  PUT(new Request(`http://x/api/modules/${id}/progress`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  }), { params: Promise.resolve({ id }) });
+const roster = (cookie: string | null, id: string) =>
+  ROSTER(new Request(`http://x/api/modules/${id}/progress`, { headers: cookie ? { cookie } : {} }),
+    { params: Promise.resolve({ id }) });
+
+describe("PUT /api/modules/:id/progress", () => {
+  it("trainee marks in_progress then completed; idempotent; re-open clears completedAt", async () => {
+    const { cookie, restaurant } = await registerOwner();
+    const created = await (await post(cookie, { title: "T", content: { body: "b" } })).json();
+    const id = created.module.id;
+    const trainee = await makeUserCookie(restaurant.id, "trainee");
+
+    const started = await (await putProgress(trainee.cookie, id, { status: "in_progress" })).json();
+    expect(started.progress.status).toBe("in_progress");
+    expect(started.progress.startedAt).not.toBeNull();
+    expect(started.progress.completedAt).toBeNull();
+
+    const done = await (await putProgress(trainee.cookie, id, { status: "completed" })).json();
+    expect(done.progress.status).toBe("completed");
+    expect(done.progress.startedAt).toBe(started.progress.startedAt); // startedAt preserved
+    expect(done.progress.completedAt).not.toBeNull();
+
+    const reopened = await (await putProgress(trainee.cookie, id, { status: "in_progress" })).json();
+    expect(reopened.progress.completedAt).toBeNull();                 // re-open clears completion
+  });
+
+  it("400 invalid status; 404 foreign/missing/non-uuid; embedded in own reads only", async () => {
+    const a = await registerOwner();
+    const b = await registerOwner();
+    const created = await (await post(a.cookie, { title: "T", content: { body: "b" } })).json();
+    const id = created.module.id;
+    expect((await putProgress(a.cookie, id, { status: "nope" })).status).toBe(400);
+    expect((await putProgress(b.cookie, id, { status: "completed" })).status).toBe(404);   // foreign module
+    expect((await putProgress(a.cookie, "not-a-uuid", { status: "completed" })).status).toBe(404);
+
+    // a's own GET reflects a's progress; a second user sees not_started
+    await putProgress(a.cookie, id, { status: "completed" });
+    const mine = await (await getOne(a.cookie, id)).json();
+    expect(mine.module.progress.status).toBe("completed");
+    const other = await makeUserCookie(a.restaurant.id, "manager");
+    const theirs = await (await getOne(other.cookie, id)).json();
+    expect(theirs.module.progress.status).toBe("not_started");
+  });
+});
+
+describe("GET /api/modules/:id/progress (manager roster)", () => {
+  it("403 trainee; lists all trainees incl. not_started; reflects completion; 404 foreign", async () => {
+    const a = await registerOwner();
+    const b = await registerOwner();
+    const created = await (await post(a.cookie, { title: "T", content: { body: "b" } })).json();
+    const id = created.module.id;
+    const t1 = await makeUserCookie(a.restaurant.id, "trainee");
+    await makeUserCookie(a.restaurant.id, "trainee"); // t2, never starts
+    await putProgress(t1.cookie, id, { status: "completed" });
+
+    expect((await roster(t1.cookie, id)).status).toBe(403);
+    expect((await roster(b.cookie, id)).status).toBe(404); // foreign module
+    const body = await (await roster(a.cookie, id)).json();
+    expect(body.roster).toHaveLength(2);                    // both trainees, owner excluded
+    const statuses = body.roster.map((e: { status: string }) => e.status).sort();
+    expect(statuses).toEqual(["completed", "not_started"]);
+    expect(body.roster.every((e: { user: { email: string } }) => typeof e.user.email === "string")).toBe(true);
+  });
+});
