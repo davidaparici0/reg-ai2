@@ -245,7 +245,8 @@ export const modules = pgTable(
     restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description"),
-    content: jsonb("content").$type<unknown>().notNull().default([]), // structure firmed up in Phase 5
+    content: jsonb("content").$type<{ body: string; documentIds?: string[]; menuItemIds?: string[] }>().notNull(),
+    position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },
@@ -256,6 +257,7 @@ export const moduleProgress = pgTable(
   "module_progress",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    restaurantId: uuid("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
     moduleId: uuid("module_id").notNull().references(() => modules.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     status: progressStatus("status").notNull().default("not_started"),
@@ -266,6 +268,7 @@ export const moduleProgress = pgTable(
   (t) => [
     unique("module_progress_uq").on(t.moduleId, t.userId),  // one progress row per (module, user)
     index("module_progress_user_idx").on(t.userId),         // "my progress across modules" (WHERE user_id=$1)
+    index("module_progress_restaurant_idx").on(t.restaurantId), // tenant scope + RLS predicate (Phase 5)
     check("module_progress_score_range", sql`${t.score} IS NULL OR (${t.score} >= 0 AND ${t.score} <= 100)`),
   ],
 );

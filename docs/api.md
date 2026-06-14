@@ -167,11 +167,36 @@ changed; retry the request.
 
 ---
 
-## 4. Deferred — defined at the start of their phase (not now)
+## 4. Modules + progress (`/api/modules`) — Phase 5, FINAL
+
+Ordered training modules a trainee reads and self-marks; managers see a roster. Modules are a
+read/track surface — **not** retrieval corpus (no embeddings, no `/api/ask` involvement).
+
+| Route | Roles | Success |
+|---|---|---|
+| `POST /api/modules` | owner\|manager | `201 {module}` (detail) |
+| `GET /api/modules?cursor=&limit=` | any authenticated | `200 {modules, nextCursor}` — `(position,id)` asc, page 20, summaries + caller progress |
+| `GET /api/modules/:id` | any authenticated | `200 {module}` (detail: full `content` + caller progress) |
+| `PATCH /api/modules/:id` | owner\|manager | `200 {module}` (partial; ≥1 field; explicit `null` clears `description`) |
+| `DELETE /api/modules/:id` | owner\|manager | `204` (hard delete; cascades progress) |
+| `PUT /api/modules/:id/progress` | any authenticated | `200 {progress}` — upserts the caller's own row |
+| `GET /api/modules/:id/progress` | owner\|manager | `200 {moduleId, roster}` — trainee roster (incl. not_started) |
+
+Body (Zod, unknown keys rejected): `title` 1–200 (required POST) · `description` ≤2000, nullable ·
+`content` `{body 1–50000, documentIds? uuid[]≤50, menuItemIds? uuid[]≤50}` (required POST; ref ids
+must resolve in the caller's tenant else `400`) · `position` int ≥0 (omit ⇒ append). Progress body:
+`{status: in_progress|completed}`. Reads normalize absent progress to
+`{status:"not_started", startedAt:null, completedAt:null}`.
+
+Errors: standard envelope — `400` validation / unresolvable ref / bad cursor · `401` · `403`
+(write or roster below manager) · `404` foreign-tenant/missing/non-uuid (anti-enumeration).
+
+---
+
+## 5. Deferred — defined at the start of their phase (not now)
 
 | Surface | Phase | Why deferred |
 |---|---|---|
-| Module CRUD + progress (`/api/modules`, `/api/progress`) | 5 | Module content structure isn't firmed up until Phase 5 |
 | Analytics/dashboard (`/api/analytics/*`) | 6 | Aggregations defined once we know what signals exist to aggregate |
 | Streaming variant of `/api/ask` | 3 (polish) | JSON contract proven first; streaming is additive UX |
 
