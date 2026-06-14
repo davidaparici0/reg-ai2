@@ -112,8 +112,8 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
   before generalizing.
 - **Phase 3 — Retrieval + grounded Q&A** (the crown jewel). FR-010–014.
 - **Phase 4 — Menu management + menu-aware answers.** ✅ DONE. FR-015–017.
-- **Phase 5 — Training modules + progress.** ◀ CURRENT. FR-018–020.
-- **Phase 6 — Analytics dashboard.** FR-021–023.
+- **Phase 5 — Training modules + progress.** ✅ DONE. FR-018–020.
+- **Phase 6 — Analytics dashboard.** ◀ CURRENT. FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** FR-026–027, injection resistance.
 - **Phase 8 — Tests, CI/CD, deploy.** FR-024–025 + eval gate in CI; public demo URL.
 
@@ -270,9 +270,25 @@ and menu-items GET (shared house idiom — fix together, Phase 7 hardening); GET
 full rows (incl. restaurantId) vs documents' column projection — revisit if the API goes
 public-facing.
 
-**Next step → Phase 5 (Training modules + progress, FR-018–020).** Module CRUD +
-completion tracking; RLS on `module_progress` lands here (the last unprotected data
-table); api.md §4 shape decided at phase start.
+**Phase 5 — COMPLETE.** Training modules + progress (FR-018/FR-019), tested + built
+(134 vitest tests, `tsc` clean, `next build` green). Spec/plan:
+`docs/superpowers/{specs,plans}/2026-06-14-phase-5-training-modules*`.
+- **Migration 0005:** `modules.position` (curriculum order) + `module_progress.restaurant_id`
+  + RLS (`tenant_isolation`, USING+WITH CHECK on the GUC) — **closes the last unprotected data
+  table**; every data table now carries the per-request tenant policy.
+- **Routes (api.md §4):** `POST/GET /api/modules` · `GET/PATCH/DELETE /api/modules/:id` ·
+  `PUT/GET /api/modules/:id/progress`. Writes + roster owner|manager; reads + own-progress
+  upsert any authenticated role. Anti-enumeration 404s (foreign/missing/non-uuid). Keyset
+  pagination on `(position, id)`; list/detail embed the caller's own progress.
+- **Model:** modules are a read/track surface — authored `content {body, documentIds?,
+  menuItemIds?}`, refs validated against the caller's tenant (`assertRefsResolveInTenant`,
+  RLS-scoped ⇒ a foreign id ⇒ `400`, no leak). Progress upsert keyed on `(module_id, user_id)`:
+  `startedAt` coalesces (first start wins), `completedAt` set on completed / cleared on re-open.
+  `score` column reserved (FR-020 quizzes deferred per spec §8). **No embeddings, no chunks, no
+  `/api/ask` involvement** — modules stay out of the RAG/eval path (eval set unaffected).
+
+**Next step → Phase 6 (Analytics dashboard, FR-021–023).** Usage/cost + grounding-rate
+rollups over `usage_events` + messages; api.md analytics section shape decided at phase start.
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
