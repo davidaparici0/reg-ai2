@@ -8,8 +8,8 @@ import { db, withTenant, pool } from "@/lib/db";
 import { restaurants, users, documents, chunks, menuItems } from "@/db/schema";
 import { chunk as chunkText } from "@/lib/ingest/chunk";
 import { embed } from "@/lib/ai/embeddings";
+import { rebuildMenuChunks } from "@/lib/menu/rebuild";
 import { hashPassword } from "@/lib/auth/password";
-import { menuCard } from "@/lib/qa/menu-card";
 import {
   RESTAURANT_A, DOCS_A, MENU_A, RESTAURANT_B, DOCS_B, MENU_B,
   type SeedDoc, type SeedMenu,
@@ -31,13 +31,8 @@ async function ingestDoc(rid: string, title: string, text: string) {
 }
 
 async function ingestMenu(rid: string, items: SeedMenu[]) {
-  const [menuDoc] = await withTenant(rid, (tx) =>
-    tx.insert(documents).values({
-      restaurantId: rid, title: "Menu", sourceType: "text",
-      contentHash: `seed-menu-${rid}`, status: "done",
-    }).returning());
-  const cards = items.map((it) => menuCard(it));
-  const { vectors } = await embed(cards);
+  // Same path as the Phase 4 routes: insert rows, then rebuild cards+chunks in-tx.
+  // (No advisory lock needed — the seeder is single-writer by construction.)
   await withTenant(rid, async (tx) => {
     for (const it of items) {
       await tx.insert(menuItems).values({
@@ -46,10 +41,7 @@ async function ingestMenu(rid: string, items: SeedMenu[]) {
         dietaryFlags: it.dietaryFlags, price: it.price,
       });
     }
-    await tx.insert(chunks).values(items.map((_, i) => ({
-      documentId: menuDoc.id, restaurantId: rid, chunkIndex: i,
-      text: cards[i], tokenCount: Math.max(1, cards[i].split(/\s+/).length), embedding: vectors[i],
-    })));
+    await rebuildMenuChunks(tx, rid, null); // null user: system/seed attribution
   });
 }
 

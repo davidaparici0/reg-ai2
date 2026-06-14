@@ -111,8 +111,8 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 2 — Ingestion pipeline** (first vertical slice). FR-005–009. PDF end-to-end
   before generalizing.
 - **Phase 3 — Retrieval + grounded Q&A** (the crown jewel). FR-010–014.
-- **Phase 4 — Menu management + menu-aware answers.** ◀ CURRENT. FR-015–017.
-- **Phase 5 — Training modules + progress.** FR-018–020.
+- **Phase 4 — Menu management + menu-aware answers.** ✅ DONE. FR-015–017.
+- **Phase 5 — Training modules + progress.** ◀ CURRENT. FR-018–020.
 - **Phase 6 — Analytics dashboard.** FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** FR-026–027, injection resistance.
 - **Phase 8 — Tests, CI/CD, deploy.** FR-024–025 + eval gate in CI; public demo URL.
@@ -243,9 +243,36 @@ arrives in Phase 3 (generation).
   model: Q08] · answerable clear gate [15/15 top-doc] · isolation 0 leaks · e2e persisted
   probe; exits 1 on regression). Needs funded `OPENAI_API_KEY`; vitest never calls OpenAI.
 
-**Next step → Phase 4 (Menu management + menu-aware answers, FR-015–017).** Owner/manager
-CRUD for `menu_items` (RLS already live), re-render + re-embed menu cards on change, and
-menu-aware retrieval verified against the eval set (menu Qs already pass: Q01/Q02/Q04/Q14).
+**Phase 4 — COMPLETE.** Menu management + menu-aware answers (FR-015–017), tested + built
+(108 vitest tests, `tsc` clean, `next build` green; eval gates re-verified end-to-end).
+Spec/plan: `docs/superpowers/{specs,plans}/2026-06-12-phase-4-menu-management*`.
+- **Routes (api.md §3):** `POST/GET /api/menu-items` + `PATCH/DELETE /api/menu-items/:id`.
+  Writes owner|manager; GET any authenticated role (lists inactive too). Anti-enumeration
+  404s (foreign/missing/non-uuid). Zod: shared base schema, allergens from the DB enum
+  vocabulary (`allergen.enumValues`), dietaryFlags lowercased tokens, price ≤2dp.
+- **FR-017 mechanism (`src/lib/menu/rebuild.ts`):** every write runs in ONE tenant tx —
+  `pg_advisory_xact_lock` (per-tenant, keyed on the Menu doc's content-hash string) →
+  row write → `rebuildMenuChunks`: active items name-ordered → `menuCard()` per item →
+  one batched embed (SKIPPED for empty menus) → swap chunks under the synthetic Menu doc
+  (`content_hash = menu:<rid>`) → usage event. **Embed-before-mutate ⇒ embed failure rolls
+  back the whole write (row included) → `502 EMBED_FAILED`** ("nothing changed; retry").
+  Inactive items get no card → Q&A falls back honestly (86'd-tonight semantics).
+- **One rendering path:** `eval/seed.ts` ingestMenu now calls the same `rebuildMenuChunks`
+  (null user = system attribution); the old hand-rolled `seed-menu-<rid>` doc is gone.
+- **Verified live (FR-017 acceptance):** PATCH Grilled Chicken `allergens:["sesame"]` →
+  immediate `/api/ask` answered "contains sesame as a recorded allergen" grounded+cited;
+  before the patch it correctly said "no recorded allergens". Eval after refactor:
+  fallbacks decline PASS (gate: Q13,Q15; model: Q08) · answerable clear PASS · 0 leaks ·
+  probe PASS (distribution byte-stable, Q08 0.5267→0.5266 re-embed noise).
+
+Known gaps carried forward: invalid `?cursor=` dates 500 instead of 400 on BOTH documents
+and menu-items GET (shared house idiom — fix together, Phase 7 hardening); GET list returns
+full rows (incl. restaurantId) vs documents' column projection — revisit if the API goes
+public-facing.
+
+**Next step → Phase 5 (Training modules + progress, FR-018–020).** Module CRUD +
+completion tracking; RLS on `module_progress` lands here (the last unprotected data
+table); api.md §4 shape decided at phase start.
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
