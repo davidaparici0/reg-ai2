@@ -5,6 +5,7 @@ import { withTenant } from "@/lib/db";
 import { documents, documentBlobs, chunks } from "@/db/schema";
 import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
+import { parseDateCursor } from "@/lib/http/cursor";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const PAGE_SIZE = 20;
@@ -61,7 +62,8 @@ export async function GET(req: Request) {
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
   const rid = session.restaurant.id;
 
-  const cursor = new URL(req.url).searchParams.get("cursor");
+  const cur = parseDateCursor(new URL(req.url).searchParams.get("cursor"));
+  if (!cur.ok) return errorResponse("VALIDATION_ERROR", "Invalid cursor");
   const rows = await withTenant(rid, (tx) =>
     tx.select({
       id: documents.id,
@@ -74,7 +76,7 @@ export async function GET(req: Request) {
       // table objects so it is "chunks".document_id = "documents".id (the correlated count).
       chunkCount: sql<number>`(select count(*)::int from ${chunks} where ${chunks}.document_id = ${documents}.id)`,
     }).from(documents)
-      .where(cursor ? lt(documents.createdAt, new Date(cursor)) : undefined)
+      .where(cur.value ? lt(documents.createdAt, cur.value) : undefined)
       .orderBy(desc(documents.createdAt))
       .limit(PAGE_SIZE + 1));
 

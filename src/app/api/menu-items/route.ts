@@ -7,6 +7,7 @@ import { withTenant } from "@/lib/db";
 import { menuItems } from "@/db/schema";
 import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
+import { parseDateCursor } from "@/lib/http/cursor";
 import { CreateMenuItem, priceToDb } from "@/lib/menu/validate";
 import { lockMenuRebuild, rebuildMenuChunks } from "@/lib/menu/rebuild";
 
@@ -56,10 +57,11 @@ export async function GET(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
 
-  const cursor = new URL(req.url).searchParams.get("cursor");
+  const cur = parseDateCursor(new URL(req.url).searchParams.get("cursor"));
+  if (!cur.ok) return errorResponse("VALIDATION_ERROR", "Invalid cursor");
   const rows = await withTenant(session.restaurant.id, (tx) =>
     tx.select().from(menuItems)
-      .where(cursor ? lt(menuItems.createdAt, new Date(cursor)) : undefined)
+      .where(cur.value ? lt(menuItems.createdAt, cur.value) : undefined)
       .orderBy(desc(menuItems.createdAt))
       .limit(PAGE_SIZE + 1));
 
