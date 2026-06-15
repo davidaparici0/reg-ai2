@@ -6,8 +6,15 @@ import { hashPassword } from "@/lib/auth/password";
 import { createSession, buildSessionCookie } from "@/lib/auth/session";
 import { RegisterReq, toPublicUser } from "@/lib/auth/types";
 import { errorResponse } from "@/lib/http/errors";
+import { clientIp, enforceLimit } from "@/lib/ratelimit/guard";
+import { RL, rlKeys } from "@/lib/ratelimit/config";
 
 export async function POST(req: Request) {
+  const ip = clientIp(req);
+  if (ip) {
+    const limited = await enforceLimit(rlKeys.register(ip), RL.registerPerIp.limit, RL.registerPerIp.windowSeconds);
+    if (limited) return limited;
+  }
   const parsed = RegisterReq.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return errorResponse("VALIDATION_ERROR", "Invalid registration", parsed.error.flatten());

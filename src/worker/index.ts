@@ -4,11 +4,13 @@
 import "server-only";
 import { claimNextDocument, reclaimStaleDocuments } from "@/lib/ingest/claim";
 import { processDocument } from "@/lib/ingest/process-document";
+import { cleanupRateLimits } from "@/lib/ratelimit/limiter";
 
 const POLL_INTERVAL_MS = 2000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function runOnce(): Promise<string | null> {
+  await cleanupRateLimits();        // opportunistic: drop rate_limit buckets older than a day
   await reclaimStaleDocuments();
   const job = await claimNextDocument();
   if (!job) return null;

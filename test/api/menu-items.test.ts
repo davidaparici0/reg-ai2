@@ -194,3 +194,11 @@ describe("DELETE /api/menu-items/:id", () => {
     expect(await menuChunks(a.restaurant.id)).toHaveLength(0);
   });
 });
+
+describe("GET /api/menu-items invalid cursor", () => {
+  it("400 (not 500) on a malformed cursor", async () => {
+    const { cookie } = await registerOwner();
+    const res = await GET(new Request("http://x/api/menu-items?cursor=not-a-date", { headers: { cookie } }));
+    expect(res.status).toBe(400);
+  });
+});

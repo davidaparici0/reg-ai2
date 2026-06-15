@@ -4,6 +4,8 @@ import { withTenant } from "@/lib/db";
 import { requireSession } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
 import { answer } from "@/lib/qa/answer";
+import { enforceLimit } from "@/lib/ratelimit/guard";
+import { RL, rlKeys } from "@/lib/ratelimit/config";
 
 // POST /api/ask — any authenticated role. Tenant resolved from session, NEVER from the client.
 const AskReq = z.object({
@@ -15,10 +17,16 @@ export async function POST(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
 
+  const rid = session.restaurant.id;
+  // Cost/abuse guard — reject BEFORE the embed/LLM spend. Minute first (short-circuits the day).
+  const overMinute = await enforceLimit(rlKeys.askMin(rid), RL.askPerMinute.limit, RL.askPerMinute.windowSeconds);
+  if (overMinute) return overMinute;
+  const overDay = await enforceLimit(rlKeys.askDay(rid), RL.askPerDay.limit, RL.askPerDay.windowSeconds);
+  if (overDay) return overDay;
+
   const parsed = AskReq.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return errorResponse("VALIDATION_ERROR", "Invalid request", parsed.error.flatten());
 
-  const rid = session.restaurant.id;
   try {
     const result = await withTenant(rid, (tx) => answer(tx, {
       restaurantId: rid,

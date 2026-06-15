@@ -74,3 +74,11 @@ describe("GET /api/documents", () => {
     expect(json.items[0].chunkCount).toBeNull();
   });
 });
+
+describe("GET /api/documents invalid cursor", () => {
+  it("400 (not 500) on a malformed cursor", async () => {
+    const { cookie } = await registerOwner();
+    const res = await GET(new Request("http://x/api/documents?cursor=not-a-date", { headers: { cookie } }));
+    expect(res.status).toBe(400);
+  });
+});

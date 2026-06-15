@@ -37,6 +37,7 @@ import {
   unique,
   check,
   customType,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 // ---- Enums: make invalid states unrepresentable at the DB level -------------
@@ -295,4 +296,18 @@ export const usageEvents = pgTable(
     check("usage_events_tokens_nonneg", sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`),
     check("usage_events_cost_nonneg", sql`${t.costUsd} >= 0`),
   ],
+);
+
+// ---- rate_limits — FR-026 ---------------------------------------------------
+// System table (NO restaurant_id, NO RLS): login is throttled before a session exists.
+// Fixed-window counter keyed by an opaque string (e.g. "login:<ip>", "ask:min:<rid>").
+// reg_app gets DML automatically via the ALTER DEFAULT PRIVILEGES from migration 0002.
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 );
