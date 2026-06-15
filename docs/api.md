@@ -47,7 +47,8 @@ single source of truth, and `z.infer` gives the TS type the client imports.
 
 ### Status codes
 `200` ok · `201` created · `204` no content · `400/401/403/404/409/429` as above ·
-`202 Accepted` specifically for async work that's been queued (ingestion).
+`202 Accepted` specifically for async work that's been queued (ingestion). ·
+`429 rate-limited` (login/register per-IP; `/api/ask` per-tenant) — carries `Retry-After`.
 
 ---
 
@@ -74,6 +75,8 @@ const LoginReq = z.object({ email: z.string().email(), password: z.string() });
 // PublicUser NEVER includes password_hash.
 ```
 
+Login & register are per-IP rate-limited (10 / 15 min → 429 + Retry-After).
+
 ### 2.2 Document upload + ingestion status (the async pattern, FR-005/009)
 
 Upload returns immediately with a job in `pending`; ingestion (parse → chunk → embed)
@@ -97,6 +100,7 @@ type DocumentStatus = {
 };
 
 // GET /api/documents  — owner|manager. -> { items: DocumentStatus[]; nextCursor }
+// An invalid ?cursor= value returns 400 (previously 500; fixed Phase 7).
 ```
 
 ### 2.3 Ask — grounded Q&A (the crown jewel, FR-010–014)
@@ -137,6 +141,8 @@ type AskResponse = {
 visibly-flagged "check with your manager" state. It's the contract-level expression of
 grounding-over-fluency.
 
+Per-tenant rate-limited: 30 / min and 500 / day → 429 + Retry-After.
+
 ---
 
 ## 3. Menu items (`/api/menu-items`) — Phase 4, FINAL
@@ -163,7 +169,8 @@ the "86'd tonight" toggle).
 Errors: standard envelope — `400` validation · `401` · `403` (write below manager) ·
 `404` foreign-tenant/missing/non-uuid id (anti-enumeration) · **`502 EMBED_FAILED`**:
 the embedding call failed and the WHOLE write rolled back (row included) — nothing
-changed; retry the request.
+changed; retry the request. An invalid `?cursor=` on GET returns `400` (previously 500;
+fixed Phase 7).
 
 ---
 

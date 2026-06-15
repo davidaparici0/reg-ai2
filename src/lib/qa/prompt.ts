@@ -13,9 +13,10 @@ export const FALLBACK_TEXT =
 
 export function buildPrompt(restaurantName: string, chunks: RetrievedChunk[], question: string): ChatMessage[] {
   const context = chunks.map((c, i) => `[${i + 1}] ${c.text}`).join("\n\n");
-  // FINAL wording (polished + eval-verified). The four rules are requirements (rag.md §5):
+  // FINAL wording (polished + eval-verified). The five rules are requirements (rag.md §5):
   // context-only answers; exact FALLBACK_TEXT on a miss; allergen/food-safety caution;
-  // concise. Rule 4's language-matching clause codifies behavior Q14 verified empirically.
+  // concise; injection resistance (CONTEXT is untrusted data, never a command source).
+  // Rule 4's language-matching clause codifies behavior Q14 verified empirically.
   const system =
     `You are the training assistant for ${restaurantName}. Staff ask you questions ` +
     `mid-shift; answer them from this restaurant's own materials — never from general ` +
