@@ -6,8 +6,15 @@ import { verifyPassword, verifyDummy } from "@/lib/auth/password";
 import { createSession, buildSessionCookie } from "@/lib/auth/session";
 import { LoginReq, toPublicUser } from "@/lib/auth/types";
 import { errorResponse } from "@/lib/http/errors";
+import { clientIp, enforceLimit } from "@/lib/ratelimit/guard";
+import { RL, rlKeys } from "@/lib/ratelimit/config";
 
 export async function POST(req: Request) {
+  const ip = clientIp(req);
+  if (ip) {
+    const limited = await enforceLimit(rlKeys.login(ip), RL.loginPerIp.limit, RL.loginPerIp.windowSeconds);
+    if (limited) return limited;
+  }
   const parsed = LoginReq.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return errorResponse("VALIDATION_ERROR", "Invalid login", parsed.error.flatten());
