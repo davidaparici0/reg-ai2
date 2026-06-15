@@ -3,7 +3,7 @@
 // connection held; the two DB transactions (read blob; persist) are short. On any failure
 // the doc is marked 'failed' with the error and the blob is KEPT (a re-upload retries it).
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { withTenant } from "@/lib/db";
 import { documents, documentBlobs, chunks, usageEvents } from "@/db/schema";
 import { parse } from "@/lib/ingest/parse";
@@ -63,11 +63,16 @@ export async function processDocument(job: ClaimedJob): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     log("ingest.failed", { jobId: job.id, error: message });
     // Mark failed; KEEP the blob so a re-upload can retry without re-uploading.
+    // Fence on status='processing': if a stale-reclaim already handed this job to another
+    // worker that finished it (status now done/failed/pending), we no longer hold the claim
+    // and must NOT clobber its result — without this, a slow-but-successful run that got
+    // reclaimed would have its 'done' overwritten with 'failed' by the losing re-run.
     // If THIS write also fails (DB down), don't throw out of processDocument silently —
     // log it; the doc stays in 'processing' and stale-reclaim (claim.ts) will retry it.
     try {
       await withTenant(job.restaurantId, (tx) =>
-        tx.update(documents).set({ status: "failed", error: message.slice(0, 500) }).where(eq(documents.id, job.id)));
+        tx.update(documents).set({ status: "failed", error: message.slice(0, 500) })
+          .where(and(eq(documents.id, job.id), eq(documents.status, "processing"))));
     } catch (markErr) {
       log("ingest.mark_failed_error", { jobId: job.id, error: String(markErr) });
     }
