@@ -68,4 +68,24 @@ describe("processDocument()", () => {
     expect(blobs).toHaveLength(1);                      // kept for retry
     expect(chunkRows).toHaveLength(0);                  // atomic: no partial chunks
   });
+
+  it("does not clobber an already-done doc to 'failed' when a stale-reclaim re-run loses the chunk race", async () => {
+    const { restaurant, job } = await seedClaimedPdf("FENCE", makeMinimalPdf("citations ground every answer"));
+    // Simulate the WINNING worker having finished: chunk #0 written + status flipped to done.
+    await withTenant(restaurant.id, async (tx) => {
+      await tx.insert(chunks).values({
+        documentId: job.id, restaurantId: restaurant.id, chunkIndex: 0, text: "x", tokenCount: 1, embedding: Array(1536).fill(0),
+      });
+      await tx.update(documents).set({ status: "done", error: null }).where(eq(documents.id, job.id));
+    });
+
+    // A stale-reclaim re-run of the SAME job re-inserts chunk #0 => unique violation. Its failure
+    // handler must NOT mark the (already-done) doc failed: the fail write is fenced on the claim
+    // still being held (status='processing'), which it no longer is.
+    await processDocument(job);
+
+    const doc = await withTenant(restaurant.id, (tx) =>
+      tx.select().from(documents).where(eq(documents.id, job.id)).then((r) => r[0]));
+    expect(doc.status).toBe("done");                    // fence prevents the clobber
+  });
 });

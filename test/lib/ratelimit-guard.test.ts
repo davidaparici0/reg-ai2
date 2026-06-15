@@ -6,13 +6,29 @@ import { rlKeys } from "@/lib/ratelimit/config";
 
 afterEach(async () => { await db.execute(sql`DELETE FROM rate_limits WHERE key LIKE 'login:test-%'`); });
 
-const reqWith = (xff: string | null) =>
-  new Request("http://x/api/auth/login", { headers: xff ? { "x-forwarded-for": xff } : {} });
+const reqWith = (xff: string | null, fly?: string) =>
+  new Request("http://x/api/auth/login", {
+    headers: {
+      ...(xff ? { "x-forwarded-for": xff } : {}),
+      ...(fly ? { "fly-client-ip": fly } : {}),
+    },
+  });
 
 describe("clientIp", () => {
-  it("takes the leftmost x-forwarded-for hop; null when absent", () => {
-    expect(clientIp(reqWith("203.0.113.7, 10.0.0.1"))).toBe("203.0.113.7");
-    expect(clientIp(reqWith("  198.51.100.2  "))).toBe("198.51.100.2");
+  it("trusts the RIGHTMOST x-forwarded-for hop (proxy-appended client), not the spoofable leftmost", () => {
+    // Attacker spoofs the leftmost token; the trusted edge appends the real client on the right.
+    // Trusting the leftmost would let them bypass the limit (fresh bucket per forged IP) and
+    // grief a victim (pre-exhaust their bucket). The rightmost hop is what our proxy observed.
+    expect(clientIp(reqWith("6.6.6.6, 203.0.113.7"))).toBe("203.0.113.7");
+    expect(clientIp(reqWith("198.51.100.2"))).toBe("198.51.100.2");        // single hop
+    expect(clientIp(reqWith("  198.51.100.2 , 10.0.0.1  "))).toBe("10.0.0.1"); // trims
+  });
+
+  it("prefers Fly-Client-IP (unforgeable) over x-forwarded-for when present", () => {
+    expect(clientIp(reqWith("6.6.6.6", "198.51.100.9"))).toBe("198.51.100.9");
+  });
+
+  it("is null when no proxy header is present (dev/test => limiting skipped)", () => {
     expect(clientIp(reqWith(null))).toBeNull();
   });
 });
