@@ -193,11 +193,29 @@ Errors: standard envelope — `400` validation / unresolvable ref / bad cursor �
 
 ---
 
-## 5. Deferred — defined at the start of their phase (not now)
+## 5. Analytics (`/api/analytics`) — Phase 6, FINAL
+
+Tenant-scoped, **owner|manager-only** read endpoints over data the app already records (no new
+writes, no migration). Time range via a bounded `?window=7d|30d|90d|all` enum (default `30d`).
+
+| Route | Roles | Success |
+|---|---|---|
+| `GET /api/analytics/summary?window=` | owner\|manager | `200 {window, range, questions, trainees, cost}` |
+| `GET /api/analytics/trainees?window=` | owner\|manager | `200 {window, range, trainees[]}` |
+
+`summary`: `questions {answered, grounded, fallback, groundingRate}` (grounded = assistant message
+has ≥1 `message_sources` row; `groundingRate` null when answered=0) · `trainees {total, active}` ·
+`cost {totalUsd, perAnswerUsd, byKind:{embedding, completion}}` — each bucket `{model, calls,
+inputTokens, outputTokens, costUsd}`, all USD as 6dp strings, `model` null if a kind ever has >1
+model. `trainees`: per `role='trainee'` user — `questionsAsked` (windowed), `modulesCompleted` /
+`modulesTotal` / `lastActiveAt` (cumulative), ordered by `questionsAsked` desc.
+
+Errors: `400` invalid `window` · `401` · `403` (below manager). No `:id` ⇒ no `404`; read-only ⇒ no `502`.
+
+## 6. Deferred — defined at the start of their phase (not now)
 
 | Surface | Phase | Why deferred |
 |---|---|---|
-| Analytics/dashboard (`/api/analytics/*`) | 6 | Aggregations defined once we know what signals exist to aggregate |
 | Streaming variant of `/api/ask` | 3 (polish) | JSON contract proven first; streaming is additive UX |
 
 All inherit the Section 1 conventions automatically. Each will be added here as a short

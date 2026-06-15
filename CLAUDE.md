@@ -113,8 +113,8 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 3 — Retrieval + grounded Q&A** (the crown jewel). FR-010–014.
 - **Phase 4 — Menu management + menu-aware answers.** ✅ DONE. FR-015–017.
 - **Phase 5 — Training modules + progress.** ✅ DONE. FR-018–020.
-- **Phase 6 — Analytics dashboard.** ◀ CURRENT. FR-021–023.
-- **Phase 7 — Guardrails, cost controls, hardening.** FR-026–027, injection resistance.
+- **Phase 6 — Analytics dashboard.** ✅ DONE. FR-021–023.
+- **Phase 7 — Guardrails, cost controls, hardening.** ◀ CURRENT. FR-026–027, injection resistance.
 - **Phase 8 — Tests, CI/CD, deploy.** FR-024–025 + eval gate in CI; public demo URL.
 
 Two design decisions to remember mid-build:
@@ -287,8 +287,27 @@ public-facing.
   `score` column reserved (FR-020 quizzes deferred per spec §8). **No embeddings, no chunks, no
   `/api/ask` involvement** — modules stay out of the RAG/eval path (eval set unaffected).
 
-**Next step → Phase 6 (Analytics dashboard, FR-021–023).** Usage/cost + grounding-rate
-rollups over `usage_events` + messages; api.md analytics section shape decided at phase start.
+**Phase 6 — COMPLETE.** Analytics (FR-021–023), tested + built (152 vitest tests, `tsc` clean,
+`next build` green). **No migration** — all source data already recorded. Spec/plan:
+`docs/superpowers/{specs,plans}/2026-06-14-phase-6-analytics*`.
+- **API-only** (FR-022 "data endpoints"; UI → Phase 8 demo). Two `owner|manager`, `withTenant`-scoped
+  reads, both `?window=7d|30d|90d|all` (default 30d; bad value ⇒ clean `400`, no free-form date 500).
+- **`GET /api/analytics/summary` (api.md §5):** `questions {answered, grounded, fallback, groundingRate}`
+  + `trainees {total, active}` + `cost {totalUsd, perAnswerUsd, byKind:{embedding, completion}}`.
+  **Grounding rate = count-based** from `message_sources` presence (assistant msg has ≥1 source ⟺
+  grounded — verified against `qa/answer.ts`), `null` when answered=0. `cost.byKind` two fixed buckets
+  (each `{model, calls, inputTokens, outputTokens, costUsd}`); money summed in SQL, 6dp strings.
+- **`GET /api/analytics/trainees`:** per `role='trainee'` user — `questionsAsked` **windowed**;
+  `modulesCompleted`/`modulesTotal`/`lastActiveAt` **cumulative**; ordered by questions desc.
+- **`src/lib/analytics/`:** `window` (enum→range, `now` injected for deterministic tests) · `queries`
+  (raw `sql` aggregates; `users` filtered by `restaurant_id` since it has no RLS; `last_active_at`
+  returned as epoch-ms → built into a Date in JS — node-postgres won't parse a `GREATEST(timestamptz)`)
+  · `serialize` (pure; derived rates, divide-by-zero guarded). Read-only ⇒ no `404`/`502`/AI calls.
+- **Verified:** isolation (tenant B's usage/messages/trainees invisible to A), empty-tenant zeros/nulls,
+  role gates, window `400`. Eval untouched (no retrieval surface) — green by construction.
+
+**Next step → Phase 7 (Guardrails, cost controls, hardening, FR-026–027).** Login rate-limiting,
+per-tenant upload limits, prompt-injection resistance; fix the carried-forward invalid-`?cursor=` 500s.
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
