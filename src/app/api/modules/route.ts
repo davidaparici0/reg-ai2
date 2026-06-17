@@ -10,6 +10,7 @@ import { errorResponse } from "@/lib/http/errors";
 import { CreateModule } from "@/lib/modules/validate";
 import { assertRefsResolveInTenant } from "@/lib/modules/refs";
 import { normalizeProgress, toDetail, toSummary } from "@/lib/modules/serialize";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const PAGE_SIZE = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,7 +20,7 @@ async function nextPosition(tx: Tx): Promise<number> {
   return Number(row?.max ?? -1) + 1;
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -47,6 +48,7 @@ export async function POST(req: Request) {
   if (!row) return errorResponse("VALIDATION_ERROR", "documentIds/menuItemIds must reference items in your restaurant");
   return NextResponse.json({ module: toDetail(row, normalizeProgress(null)) }, { status: 201 });
 }
+export const POST = withRequestLog("modules", postHandler);
 
 function parseCursor(raw: string | null): { position: number; id: string } | null {
   if (!raw) return null;
@@ -57,7 +59,7 @@ function parseCursor(raw: string | null): { position: number; id: string } | nul
   return { position, id };
 }
 
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
 
@@ -91,3 +93,4 @@ export async function GET(req: Request) {
     nextCursor: hasMore && last ? `${last.m.position}.${last.m.id}` : null,
   });
 }
+export const GET = withRequestLog("modules", getHandler);

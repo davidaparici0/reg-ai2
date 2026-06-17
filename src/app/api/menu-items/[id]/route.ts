@@ -10,10 +10,11 @@ import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
 import { PatchMenuItem, priceToDb } from "@/lib/menu/validate";
 import { lockMenuRebuild, rebuildMenuChunks } from "@/lib/menu/rebuild";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const Uuid = z.string().uuid();
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function patchHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -54,8 +55,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return errorResponse("EMBED_FAILED", "Menu embedding failed; nothing was changed. Retry the request.");
   }
 }
+export const PATCH = withRequestLog("menu-items/:id", patchHandler);
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function deleteHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -79,3 +81,4 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     return errorResponse("EMBED_FAILED", "Menu embedding failed; nothing was changed. Retry the request.");
   }
 }
+export const DELETE = withRequestLog("menu-items/:id", deleteHandler);

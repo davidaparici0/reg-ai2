@@ -10,6 +10,7 @@ import { errorResponse } from "@/lib/http/errors";
 import { PatchModule } from "@/lib/modules/validate";
 import { assertRefsResolveInTenant } from "@/lib/modules/refs";
 import { normalizeProgress, toDetail } from "@/lib/modules/serialize";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -21,7 +22,7 @@ async function callerProgress(tx: Tx, moduleId: string, userId: string) {
   return p ?? null;
 }
 
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function getHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   const { id } = await ctx.params;
@@ -36,8 +37,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!result) return errorResponse("NOT_FOUND", "Module not found");
   return NextResponse.json({ module: toDetail(result.m, normalizeProgress(result.p)) });
 }
+export const GET = withRequestLog("modules/:id", getHandler);
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function patchHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -67,8 +69,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (outcome === "missing") return errorResponse("NOT_FOUND", "Module not found");
   return NextResponse.json({ module: toDetail(outcome.m, normalizeProgress(outcome.p)) });
 }
+export const PATCH = withRequestLog("modules/:id", patchHandler);
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function deleteHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -82,3 +85,4 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   if (!deleted) return errorResponse("NOT_FOUND", "Module not found");
   return new NextResponse(null, { status: 204 });
 }
+export const DELETE = withRequestLog("modules/:id", deleteHandler);

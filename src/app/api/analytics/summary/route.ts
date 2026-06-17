@@ -7,8 +7,9 @@ import { errorResponse } from "@/lib/http/errors";
 import { parseWindow } from "@/lib/analytics/window";
 import { summaryStats } from "@/lib/analytics/queries";
 import { serializeRange, toSummaryResponse } from "@/lib/analytics/serialize";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -20,3 +21,4 @@ export async function GET(req: Request) {
   const stats = await withTenant(rid, (tx) => summaryStats(tx, rid, w.since));
   return NextResponse.json(toSummaryResponse(w.window, serializeRange(w.since, w.until), stats));
 }
+export const GET = withRequestLog("analytics/summary", getHandler);

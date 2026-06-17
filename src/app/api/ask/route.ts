@@ -6,6 +6,7 @@ import { errorResponse } from "@/lib/http/errors";
 import { answer } from "@/lib/qa/answer";
 import { enforceLimit } from "@/lib/ratelimit/guard";
 import { RL, rlKeys } from "@/lib/ratelimit/config";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 // POST /api/ask — any authenticated role. Tenant resolved from session, NEVER from the client.
 const AskReq = z.object({
@@ -13,7 +14,7 @@ const AskReq = z.object({
   conversationId: z.string().uuid().optional(),
 });
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
 
@@ -41,3 +42,5 @@ export async function POST(req: Request) {
     return errorResponse("INTERNAL", "Failed to answer");
   }
 }
+
+export const POST = withRequestLog("ask", postHandler);

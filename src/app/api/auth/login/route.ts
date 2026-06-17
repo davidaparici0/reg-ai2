@@ -8,8 +8,9 @@ import { LoginReq, toPublicUser } from "@/lib/auth/types";
 import { errorResponse } from "@/lib/http/errors";
 import { clientIp, enforceLimit } from "@/lib/ratelimit/guard";
 import { RL, rlKeys } from "@/lib/ratelimit/config";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const ip = clientIp(req);
   if (ip) {
     const limited = await enforceLimit(rlKeys.login(ip), RL.loginPerIp.limit, RL.loginPerIp.windowSeconds);
@@ -36,3 +37,5 @@ export async function POST(req: Request) {
   res.cookies.set(buildSessionCookie(token, expiresAt));
   return res;
 }
+
+export const POST = withRequestLog("auth/login", postHandler);

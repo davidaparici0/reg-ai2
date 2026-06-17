@@ -10,10 +10,11 @@ import { errorResponse } from "@/lib/http/errors";
 import { parseDateCursor } from "@/lib/http/cursor";
 import { CreateMenuItem, priceToDb } from "@/lib/menu/validate";
 import { lockMenuRebuild, rebuildMenuChunks } from "@/lib/menu/rebuild";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const PAGE_SIZE = 20;
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -50,10 +51,11 @@ export async function POST(req: Request) {
     return errorResponse("EMBED_FAILED", "Menu embedding failed; nothing was changed. Retry the request.");
   }
 }
+export const POST = withRequestLog("menu-items", postHandler);
 
 // GET — any authenticated role. Same cursor idiom as GET /api/documents (created_at desc).
 // Includes inactive items: managers must see what's 86'd; invisibility is a Q&A property.
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
 
@@ -72,3 +74,4 @@ export async function GET(req: Request) {
     nextCursor: hasMore ? page[page.length - 1].createdAt.toISOString() : null,
   });
 }
+export const GET = withRequestLog("menu-items", getHandler);

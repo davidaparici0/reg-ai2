@@ -8,8 +8,9 @@ import { RegisterReq, toPublicUser } from "@/lib/auth/types";
 import { errorResponse } from "@/lib/http/errors";
 import { clientIp, enforceLimit } from "@/lib/ratelimit/guard";
 import { RL, rlKeys } from "@/lib/ratelimit/config";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const ip = clientIp(req);
   if (ip) {
     const limited = await enforceLimit(rlKeys.register(ip), RL.registerPerIp.limit, RL.registerPerIp.windowSeconds);
@@ -48,3 +49,5 @@ export async function POST(req: Request) {
     return errorResponse("INTERNAL", "Registration failed");
   }
 }
+
+export const POST = withRequestLog("auth/register", postHandler);
