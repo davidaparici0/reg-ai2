@@ -1,0 +1,38 @@
+# Fly.io deployment — Phase 8c. Rename `app` and pick a region, then `fly deploy`.
+# Two processes from ONE image: `web` (Next) and `worker` (the ingestion poller).
+# See DEPLOY.md for the full one-time setup (database, roles, secrets).
+app = "reg-ai"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Apply DB migrations on every deploy, BEFORE the new version takes traffic. Runs as the
+# admin role via MIGRATION_DATABASE_URL (a Fly secret). drizzle-kit is in the image (full deps).
+[deploy]
+  release_command = "npm run db:migrate"
+
+[processes]
+  web = "npm start"
+  worker = "npm run worker"
+
+# Only the web process serves HTTP. The worker is a headless long-running poller.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  # The worker is single-process and light; one shared-cpu VM per process is plenty for the demo.
