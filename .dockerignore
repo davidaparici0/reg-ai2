@@ -1,0 +1,19 @@
+# Build the image from a clean context; the builder regenerates node_modules + .next itself.
+node_modules
+.next
+.git
+.github
+.env
+.env.*
+!.env.example
+npm-debug.log*
+.DS_Store
+
+# Not needed at runtime (web/worker/migrations): tests, eval harness, docs, planning.
+test
+eval
+docs
+*.md
+
+# Keep: src/, schema.ts, drizzle/ (migrations run at release), drizzle.config.ts,
+# package*.json, tsconfig*.json, next.config.ts, eslint.config.mjs.
