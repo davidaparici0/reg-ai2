@@ -115,8 +115,8 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 5 — Training modules + progress.** ✅ DONE. FR-018–020.
 - **Phase 6 — Analytics dashboard.** ✅ DONE. FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** ✅ DONE. FR-026–027, injection resistance.
-- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT (8a CI+eval ✅; 8b observability ✅; 8c deploy ·
-  8d demo UI next). FR-024–025 + eval gate in CI; public demo URL.
+- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT (8a CI+eval ✅; 8b observability ✅; 8c deploy
+  artifacts ✅, merged to `main`; 8d demo UI next). FR-024–025 + eval gate in CI; public demo URL.
 
 Two design decisions to remember mid-build:
 - **D1 (RLS):** policies read `current_setting('app.restaurant_id')`; the auth layer must
@@ -364,9 +364,28 @@ tested + built (184 tests, `tsc` + `lint --max-warnings 0` clean, `next build` g
   `durationMs` in each line is the FR-027 per-request latency; P50/P95 are aggregatable from logs.
   DB-persisted latency (for a dashboard P50/P95) is a noted later option, not MVP (no migration here).
 
-**Next step → Phase 8c (deploy): Dockerfile(s) + worker service + Fly/Railway config + `reg_worker`
-role + migrations-on-deploy. Code is mine to write; the live deploy + public URL is David's action
-(his cloud account). Open decision at 8c start: Fly.io vs Railway.**
+**Phase 8c — COMPLETE (code).** Deploy artifacts (FR-024 deploy leg), verified green this session
+(`tsc` PASS · `next build` PASS, no lockfile warning · 184/184 vitest). Decision: **Fly.io** over
+Railway (native `release_command` for migrations-on-deploy; first-class multi-process). Merged to
+`main` (`e5f2046`, `--no-ff`); the live `fly deploy` + public URL is David's action (his cloud account).
+- **`Dockerfile`** — ONE `node:22-bookworm-slim` image, three roles (web / worker / release-migrations).
+  Dev deps kept in the runtime image on purpose: the worker runs via `tsx` and release runs
+  `drizzle-kit migrate` (both dev deps), and web + worker share one image. `next build` gets a
+  throwaway `DATABASE_URL` (route modules assert it at import but never connect; real DSN injected
+  at runtime via secrets). Debian (glibc) over alpine for clean `@node-rs/argon2` / `pg` bindings.
+- **`fly.toml`** — two processes from one image (`web = npm start`, `worker = npm run worker`);
+  only `web` serves HTTP (`internal_port = 8080`, health check on `/api/health`). `[deploy]
+  release_command = "npm run db:migrate"` runs migrations as the admin role (`MIGRATION_DATABASE_URL`)
+  BEFORE the new version takes traffic.
+- **`DEPLOY.md`** — exact one-time setup: managed Postgres+pgvector (Neon/Supabase), the two SQL
+  role grants (`reg_app` RLS-applies, `reg_worker` BYPASSRLS but non-superuser), `fly secrets set`
+  of the three DSNs + `OPENAI_API_KEY`, `fly deploy`, health-check verify, plus a Railway path.
+- **`.dockerignore`** — clean build context (drops `node_modules`/`.next`/`test`/`eval`/`docs`/`*.md`/
+  `.env*`); keeps `src/`, `schema.ts`, `drizzle/`, `tsconfig*.json`, configs. `next.config.ts` pins
+  `turbopack.root = process.cwd()` — the "additional lockfiles" build warning is GONE (confirmed).
 
-Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
-silence later via `turbopack.root` in `next.config.ts` if it nags.
+**Next step → Phase 8d (demo UI): public-facing flow exercising register → upload → grounded ask
+(citations or honest fallback) → manager analytics. Build in readable increments. Brainstorm scope
+first (which flows, polish level, auth UX) before code. Done = the flow works end-to-end on the
+deployed app and David can explain each piece.** (Live Fly deploy is David's parallel action — not a
+blocker for 8d coding.)
