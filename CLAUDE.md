@@ -115,7 +115,7 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 5 — Training modules + progress.** ✅ DONE. FR-018–020.
 - **Phase 6 — Analytics dashboard.** ✅ DONE. FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** ✅ DONE. FR-026–027, injection resistance.
-- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT (8a CI+eval ✅; 8b observability · 8c deploy ·
+- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT (8a CI+eval ✅; 8b observability ✅; 8c deploy ·
   8d demo UI next). FR-024–025 + eval gate in CI; public demo URL.
 
 Two design decisions to remember mid-build:
@@ -351,8 +351,22 @@ slices: **8a CI+eval ✅** · 8b observability (FR-025 + latency) · 8c deploy �
 - **Manual one-time follow-ups (not automatable from the workflow):** add the `OPENAI_API_KEY` repo
   secret to activate the eval gate; enable branch protection on `main` requiring the `verify` check.
 
-**Next step → Phase 8b (observability): structured request logging (FR-025) + latency instrumentation
-on `/api/ask` (FR-027 latency leg).**
+**Phase 8b — COMPLETE.** Observability (FR-025 request logging + FR-027 per-request latency leg),
+tested + built (184 tests, `tsc` + `lint --max-warnings 0` clean, `next build` green).
+- **`src/lib/obs/log.ts`** — `logEvent(event, fields)`: one structured JSON line; the caller picks
+  the fields, so secrets/PII are never logged (we log route/method/status/duration, never the
+  question text, tokens, or DSN/key). Mirrors the worker's log shape.
+- **`src/lib/obs/with-request-log.ts`** — `withRequestLog(route, handler)` HOF: times with
+  `performance.now()`, logs `{http, route, method, status, durationMs}` in a `finally` (a thrown
+  handler still records 500 + latency). Variadic-rest + concrete-response generics preserve each
+  route's exact `(req)`/`(req,ctx)` signature (Next build-time check) and `NextResponse.cookies`.
+- **Applied to all 22 handlers across 15 routes** (named exports unchanged → tests/imports intact).
+  `durationMs` in each line is the FR-027 per-request latency; P50/P95 are aggregatable from logs.
+  DB-persisted latency (for a dashboard P50/P95) is a noted later option, not MVP (no migration here).
+
+**Next step → Phase 8c (deploy): Dockerfile(s) + worker service + Fly/Railway config + `reg_worker`
+role + migrations-on-deploy. Code is mine to write; the live deploy + public URL is David's action
+(his cloud account). Open decision at 8c start: Fly.io vs Railway.**
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.

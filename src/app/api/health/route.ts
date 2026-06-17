@@ -9,10 +9,11 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getHandler() {
   try {
     // Single round-trip doubles as the liveness probe (the query itself proves
     // the connection works) and the pgvector presence check.
@@ -35,3 +36,5 @@ export async function GET() {
     return NextResponse.json({ db: "down" }, { status: 503 });
   }
 }
+
+export const GET = withRequestLog("health", getHandler);

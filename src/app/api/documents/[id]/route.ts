@@ -5,11 +5,12 @@ import { withTenant } from "@/lib/db";
 import { documents, chunks } from "@/db/schema";
 import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const Uuid = z.string().uuid();
 
 // GET /api/documents/:id — owner|manager, this tenant's document only.
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function getHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -35,3 +36,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     chunkCount: doc.status === "done" ? doc.chunkCount : null,
   });
 }
+export const GET = withRequestLog("documents/:id", getHandler);

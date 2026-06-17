@@ -6,12 +6,13 @@ import { documents, documentBlobs, chunks } from "@/db/schema";
 import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
 import { parseDateCursor } from "@/lib/http/cursor";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const PAGE_SIZE = 20;
 
 // POST /api/documents — owner|manager. multipart/form-data: file (PDF), title?.
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -54,9 +55,10 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ documentId: result.id, status: result.status }, { status: result.created ? 202 : 200 });
 }
+export const POST = withRequestLog("documents", postHandler);
 
 // GET /api/documents — owner|manager. Cursor pagination on created_at.
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -90,3 +92,4 @@ export async function GET(req: Request) {
     nextCursor: hasMore ? page[page.length - 1].createdAt.toISOString() : null,
   });
 }
+export const GET = withRequestLog("documents", getHandler);

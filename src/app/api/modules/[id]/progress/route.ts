@@ -9,10 +9,11 @@ import { requireSession, hasRole } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
 import { ProgressUpdate } from "@/lib/modules/validate";
 import { normalizeProgress } from "@/lib/modules/serialize";
+import { withRequestLog } from "@/lib/obs/with-request-log";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function putHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   const { id } = await ctx.params;
@@ -47,8 +48,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!row) return errorResponse("NOT_FOUND", "Module not found");
   return NextResponse.json({ progress: { moduleId: id, ...normalizeProgress(row) } });
 }
+export const PUT = withRequestLog("modules/:id/progress", putHandler);
 
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function getHandler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireSession(req);
   if (!session) return errorResponse("UNAUTHENTICATED", "Sign in required");
   if (!hasRole(session.user.role, "manager")) return errorResponse("FORBIDDEN", "Manager role required");
@@ -77,3 +79,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     })),
   });
 }
+export const GET = withRequestLog("modules/:id/progress", getHandler);
