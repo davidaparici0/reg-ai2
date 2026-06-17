@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: reg
+          POSTGRES_PASSWORD: reg_dev_pw
+          POSTGRES_DB: reg_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reg -d reg_ai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MIGRATION_DATABASE_URL: postgres://reg:reg_dev_pw@localhost:5432/reg_ai
+      DATABASE_URL: postgres://reg_app:reg_app_dev_pw@localhost:5432/reg_ai
+      WORKER_DATABASE_URL: postgres://reg:reg_dev_pw@localhost:5432/reg_ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations (extension + reg_app role + RLS)
+        run: npm run db:migrate
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint (no warnings allowed)
+        run: npm run lint -- --max-warnings 0
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  eval:
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: reg
+          POSTGRES_PASSWORD: reg_dev_pw
+          POSTGRES_DB: reg_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reg -d reg_ai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MIGRATION_DATABASE_URL: postgres://reg:reg_dev_pw@localhost:5432/reg_ai
+      DATABASE_URL: postgres://reg_app:reg_app_dev_pw@localhost:5432/reg_ai
+      WORKER_DATABASE_URL: postgres://reg:reg_dev_pw@localhost:5432/reg_ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        run: npm run db:migrate
+      - name: Check for OpenAI key
+        id: key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY not set — skipping eval (green)."
+          fi
+      - name: Seed eval corpus
+        if: steps.key.outputs.present == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npm run eval:seed
+      - name: Run eval gates
+        if: steps.key.outputs.present == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npm run eval:run
