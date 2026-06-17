@@ -115,7 +115,8 @@ A phase isn't done until it **runs, is tested, and David can explain it.**
 - **Phase 5 — Training modules + progress.** ✅ DONE. FR-018–020.
 - **Phase 6 — Analytics dashboard.** ✅ DONE. FR-021–023.
 - **Phase 7 — Guardrails, cost controls, hardening.** ✅ DONE. FR-026–027, injection resistance.
-- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT. FR-024–025 + eval gate in CI; public demo URL.
+- **Phase 8 — Tests, CI/CD, deploy.** ◀ CURRENT (8a CI+eval ✅; 8b observability · 8c deploy ·
+  8d demo UI next). FR-024–025 + eval gate in CI; public demo URL.
 
 Two design decisions to remember mid-build:
 - **D1 (RLS):** policies read `current_setting('app.restaurant_id')`; the auth layer must
@@ -337,7 +338,21 @@ data already recorded. Spec/plan:
 - **Explicitly deferred to Phase 8:** per-tenant upload caps (FR-026 upload limit
   sub-feature) + structured logging (FR-025).
 
-**Next step → Phase 8 (Tests, CI/CD, deploy; FR-024–025 + eval gate in CI; public demo URL).**
+**Phase 8a — COMPLETE.** CI + eval gate (FR-027 eval-in-CI leg), tested + built (179 tests, `tsc`
+clean, `next build` green; `lint --max-warnings 0` now a real gate). Phase 8 is decomposed into
+slices: **8a CI+eval ✅** · 8b observability (FR-025 + latency) · 8c deploy · 8d demo UI.
+- **`.github/workflows/ci.yml`, two jobs.** `verify` (every PR + push to `main`): `pgvector/pgvector:pg16`
+  service → `db:migrate` as `reg` (creates extension + `reg_app` + RLS, so CI exercises real isolation)
+  → `tsc` → `lint --max-warnings 0` → `test` (as `reg_app`) → `build`. `eval` (needs `verify`,
+  gated to `main` + `workflow_dispatch`): `eval:seed` + `eval:run`, but **only when `OPENAI_API_KEY`
+  is present** (a step-output guard, since secrets can't be used in a job `if:`) — skips green otherwise.
+- **DB creds = committed dev defaults** (ephemeral CI db); the only real secret is `OPENAI_API_KEY`.
+- **Lint gate:** `^_`-prefixed intentional discards ignored (e.g. `toPublicUser`); 2 dead test imports removed.
+- **Manual one-time follow-ups (not automatable from the workflow):** add the `OPENAI_API_KEY` repo
+  secret to activate the eval gate; enable branch protection on `main` requiring the `verify` check.
+
+**Next step → Phase 8b (observability): structured request logging (FR-025) + latency instrumentation
+on `/api/ask` (FR-027 latency leg).**
 
 Open: `next build` warns "Detected additional lockfiles" (Turbopack root inference) —
 silence later via `turbopack.root` in `next.config.ts` if it nags.
