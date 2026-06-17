@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, withTenant } from "@/lib/db";
 import { restaurants, users, conversations, messages } from "@/db/schema";
 import { track, cleanup } from "../helpers/db";

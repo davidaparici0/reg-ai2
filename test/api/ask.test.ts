@@ -13,7 +13,7 @@ vi.mock("@/lib/ai/generate", () => ({
 }));
 
 import { POST } from "@/app/api/ask/route";
-import { db, withTenant } from "@/lib/db";
+import { withTenant } from "@/lib/db";
 import { documents, chunks, messages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { registerOwner } from "../helpers/auth";
